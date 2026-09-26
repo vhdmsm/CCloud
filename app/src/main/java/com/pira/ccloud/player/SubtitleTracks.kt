@@ -31,12 +31,36 @@ object SubtitleTracks {
         }
     }
 
+    // True when the track title itself says English (the language tag alone is unreliable: MKV
+    // tracks without a language tag are reported as "eng")
+    fun isLabeledEnglish(format: Format): Boolean {
+        val label = format.label?.lowercase().orEmpty()
+        return englishLabelWords.any { label.contains(it) }
+    }
+
+    // Language of subtitle text judged by its script, or null when there is too little text
+    fun detectLanguage(text: String): SubtitleLanguage? {
+        var arabicScript = 0
+        var latin = 0
+        for (c in text) {
+            when {
+                c in '؀'..'ۿ' || c in 'ﭐ'..'﷿' || c in 'ﹰ'..'﻿' -> arabicScript++
+                c in 'a'..'z' || c in 'A'..'Z' -> latin++
+            }
+        }
+        return when {
+            arabicScript >= 3 && arabicScript > latin -> SubtitleLanguage.PERSIAN
+            latin >= 5 && arabicScript == 0 -> SubtitleLanguage.ENGLISH
+            else -> null
+        }
+    }
+
     // Stable identifier for a track, used to remember a manual track choice across re-selections
     fun keyOf(format: Format): String =
         format.id ?: "${format.language}|${format.label}|${format.codecs}|${format.sampleMimeType}"
 
-    fun displayName(format: Format, position: Int): String {
-        val language = when (classify(format)) {
+    fun displayName(format: Format, position: Int, trackLanguage: SubtitleLanguage = classify(format)): String {
+        val language = when (trackLanguage) {
             SubtitleLanguage.PERSIAN -> "Persian"
             SubtitleLanguage.ENGLISH -> "English"
             SubtitleLanguage.OTHER -> format.language ?: "Unknown"

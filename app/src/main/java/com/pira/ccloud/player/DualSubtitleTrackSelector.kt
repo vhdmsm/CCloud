@@ -11,6 +11,7 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.trackselection.ExoTrackSelection
 import androidx.media3.exoplayer.trackselection.MappingTrackSelector.MappedTrackInfo
 import com.pira.ccloud.data.model.SubtitleMode
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Track selector that picks subtitle tracks according to a [SubtitleMode] instead of ExoPlayer's
@@ -40,6 +41,26 @@ class DualSubtitleTrackSelector(
     var subtitleConfig = SubtitleConfig(initialMode)
         private set
 
+    // Language seen in each track's displayed text (track key -> language); wins over metadata
+    private val detectedLanguages = ConcurrentHashMap<String, SubtitleLanguage>()
+
+    fun languageOf(format: Format): SubtitleLanguage =
+        detectedLanguages[SubtitleTracks.keyOf(format)] ?: SubtitleTracks.classify(format)
+
+    /**
+     * Called with the text shown from [format]. The first time a track's language can be told from
+     * its text, selection is re-run, so a mislabeled track is replaced by the right one.
+     */
+    fun reportSubtitleText(format: Format, text: String) {
+        val key = SubtitleTracks.keyOf(format)
+        if (detectedLanguages.containsKey(key)) return
+        val detected = SubtitleTracks.detectLanguage(text) ?: return
+        // Latin text in a track tagged with another language (e.g. Turkish) is not English
+        if (detected == SubtitleLanguage.ENGLISH && SubtitleTracks.classify(format) == SubtitleLanguage.OTHER) return
+        detectedLanguages[key] = detected
+        invalidate()
+    }
+
     fun setSubtitleConfig(config: SubtitleConfig) {
         if (config == subtitleConfig) return
         subtitleConfig = config
@@ -56,7 +77,7 @@ class DualSubtitleTrackSelector(
         return if (config.englishTrackKey != null) {
             key == config.englishTrackKey
         } else {
-            SubtitleTracks.classify(format) == SubtitleLanguage.ENGLISH
+            languageOf(format) == SubtitleLanguage.ENGLISH
         }
     }
 
@@ -117,19 +138,35 @@ class DualSubtitleTrackSelector(
 
     private fun pickPersian(candidates: List<Candidate>, config: SubtitleConfig): Candidate? =
         findByKey(candidates, config.persianTrackKey)
-            ?: best(candidates, SubtitleLanguage.PERSIAN)
+            ?: best(candidates.filter { languageOf(it.format) == SubtitleLanguage.PERSIAN })
             // Untagged tracks on this Persian-focused service are almost always Persian
-            ?: best(candidates, SubtitleLanguage.UNKNOWN)
+            ?: best(candidates.filter { languageOf(it.format) == SubtitleLanguage.UNKNOWN })
+            // MKV tracks without a language tag are reported as English: try those until their
+            // text shows the real language (see reportSubtitleText)
+            ?: best(candidates.filter { isUnverifiedEnglishTag(it.format) })
 
     private fun pickEnglish(candidates: List<Candidate>, config: SubtitleConfig): Candidate? =
         findByKey(candidates, config.englishTrackKey)
-            ?: best(candidates, SubtitleLanguage.ENGLISH)
+            ?: best(
+                candidates.filter { languageOf(it.format) == SubtitleLanguage.ENGLISH },
+                // Tracks titled "English" before ones only tagged "eng"
+                preferLabeledEnglish = true
+            )
+            ?: best(candidates.filter { languageOf(it.format) == SubtitleLanguage.UNKNOWN })
+
+    fun isUnverifiedEnglishTag(format: Format): Boolean =
+        !detectedLanguages.containsKey(SubtitleTracks.keyOf(format)) &&
+            languageOf(format) == SubtitleLanguage.ENGLISH &&
+            !SubtitleTracks.isLabeledEnglish(format)
 
     private fun findByKey(candidates: List<Candidate>, key: String?): Candidate? =
         key?.let { candidates.firstOrNull { SubtitleTracks.keyOf(it.format) == key } }
 
-    private fun best(candidates: List<Candidate>, language: SubtitleLanguage): Candidate? =
-        candidates
-            .filter { SubtitleTracks.classify(it.format) == language }
-            .minByOrNull { SubtitleTracks.preferenceRank(it.format) }
+    private fun best(candidates: List<Candidate>, preferLabeledEnglish: Boolean = false): Candidate? =
+        candidates.minWithOrNull(
+            compareBy<Candidate>(
+                { if (preferLabeledEnglish && !SubtitleTracks.isLabeledEnglish(it.format)) 1 else 0 },
+                { SubtitleTracks.preferenceRank(it.format) }
+            )
+        )
 }

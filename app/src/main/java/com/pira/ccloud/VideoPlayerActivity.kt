@@ -479,31 +479,36 @@ fun VideoPlayerScreen(
             val selector = DualSubtitleTrackSelector(context, subtitleConfig.mode)
             trackSelector = selector
             
+            lateinit var player: ExoPlayer
             // Second subtitle renderer whose cues (English in "Both" mode) are drawn by our overlay
             val renderersFactory = DualSubtitleRenderersFactory(
                 context,
                 selector,
-                TextOutput { cueGroup -> secondaryCueText = cueGroup.cues.toSubtitleText() }
-            )
-            
-            ExoPlayer.Builder(context, renderersFactory)
-                .setTrackSelector(selector)
-                .build().apply {
-                    try {
-                        setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
-                        prepare()
-                        // If we're retrying, seek to the current position
-                        if (isRetrying && currentPosition > 0) {
-                            seekTo(currentPosition)
-                        }
-                        playWhenReady = isPlaying // Start with current play state
-                        // Set initial playback speed
-                        setPlaybackSpeed(playbackSpeed)
-                    } catch (e: Exception) {
-                        // Don't show error, just mark as retrying
-                        isRetrying = true
-                    }
+                TextOutput { cueGroup ->
+                    secondaryCueText = cueGroup.cues.toSubtitleText()
+                    reportShownSubtitle(player, selector, secondary = true, text = secondaryCueText)
                 }
+            )
+
+            player = ExoPlayer.Builder(context, renderersFactory)
+                .setTrackSelector(selector)
+                .build()
+            player.apply {
+                try {
+                    setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
+                    prepare()
+                    // If we're retrying, seek to the current position
+                    if (isRetrying && currentPosition > 0) {
+                        seekTo(currentPosition)
+                    }
+                    playWhenReady = isPlaying // Start with current play state
+                    // Set initial playback speed
+                    setPlaybackSpeed(playbackSpeed)
+                } catch (e: Exception) {
+                    // Don't show error, just mark as retrying
+                    isRetrying = true
+                }
+            }
         } catch (e: Exception) {
             // Don't show error, just mark as retrying
             isRetrying = true
@@ -520,6 +525,7 @@ fun VideoPlayerScreen(
             
             override fun onCues(cueGroup: CueGroup) {
                 primaryCueText = cueGroup.cues.toSubtitleText()
+                reportShownSubtitle(exoPlayer, trackSelector, secondary = false, text = primaryCueText)
             }
         }
     }
@@ -528,7 +534,7 @@ fun VideoPlayerScreen(
     fun cycleSubtitleMode() {
         val newMode = subtitleConfig.mode.next()
         updateSubtitleConfig(subtitleConfig.copy(mode = newMode))
-        val available = currentTracks.isEmpty || isSubtitleModeAvailable(newMode, currentTracks, subtitleConfig)
+        val available = currentTracks.isEmpty || isSubtitleModeAvailable(newMode, currentTracks, subtitleConfig, trackSelector)
         subtitleMessage = "Subtitles: ${newMode.label}" + if (available) "" else " (not found in this video)"
     }
     
@@ -1421,7 +1427,7 @@ fun TrackSelectionDialog(
                     SubtitleModeOption(
                         mode = mode,
                         isSelected = subtitleConfig.mode == mode,
-                        isAvailable = tracks.isEmpty || isSubtitleModeAvailable(mode, tracks, subtitleConfig),
+                        isAvailable = tracks.isEmpty || isSubtitleModeAvailable(mode, tracks, subtitleConfig, trackSelector),
                         onSelect = { onSubtitleConfigChange(subtitleConfig.copy(mode = it)) }
                     )
                 }
@@ -1473,7 +1479,9 @@ private data class SubtitleTrackOption(
     val language: SubtitleLanguage,
     val isSelected: Boolean,
     // Played by the second subtitle renderer ("Both" mode)
-    val isSecondary: Boolean
+    val isSecondary: Boolean,
+    // Tagged English only by default (e.g. MKV without a language tag), text not checked yet
+    val mayBePersian: Boolean
 )
 
 private fun subtitleTrackOptions(
@@ -1492,26 +1500,52 @@ private fun subtitleTrackOptions(
         .sortedBy { (group, index) -> group.getTrackFormat(index).id?.toIntOrNull() ?: Int.MAX_VALUE }
     return textTracks.mapIndexed { position, (group, index) ->
         val format = group.getTrackFormat(index)
+        val language = trackSelector?.languageOf(format) ?: SubtitleTracks.classify(format)
         SubtitleTrackOption(
             key = SubtitleTracks.keyOf(format),
-            name = SubtitleTracks.displayName(format, position + 1),
-            language = SubtitleTracks.classify(format),
+            name = SubtitleTracks.displayName(format, position + 1, language),
+            language = language,
             isSelected = group.isTrackSelected(index),
-            isSecondary = trackSelector?.isSecondaryTrack(format) == true
+            isSecondary = trackSelector?.isSecondaryTrack(format) == true,
+            mayBePersian = trackSelector?.isUnverifiedEnglishTag(format) == true
         )
     }
+}
+
+// Passes shown subtitle text to the track selector so it can check the track's real language
+private fun reportShownSubtitle(
+    player: Player?,
+    trackSelector: DualSubtitleTrackSelector?,
+    secondary: Boolean,
+    text: String
+) {
+    if (player == null || trackSelector == null || text.isEmpty()) return
+    val shownFormats = player.currentTracks.groups
+        .filter { it.type == C.TRACK_TYPE_TEXT }
+        .flatMap { group ->
+            (0 until group.length)
+                .filter { group.isTrackSelected(it) }
+                .map { group.getTrackFormat(it) }
+        }
+        .filter { trackSelector.isSecondaryTrack(it) == secondary }
+    // Only when it is clear which track the text came from
+    shownFormats.singleOrNull()?.let { trackSelector.reportSubtitleText(it, text) }
 }
 
 // Whether the video has a track the given mode can show (mirrors DualSubtitleTrackSelector's choice)
 private fun isSubtitleModeAvailable(
     mode: SubtitleMode,
     tracks: Tracks,
-    config: DualSubtitleTrackSelector.SubtitleConfig
+    config: DualSubtitleTrackSelector.SubtitleConfig,
+    trackSelector: DualSubtitleTrackSelector?
 ): Boolean {
-    val languages = subtitleTrackOptions(tracks, null).map { it.language }
+    val options = subtitleTrackOptions(tracks, trackSelector)
+    val languages = options.map { it.language }
     val hasPersian = config.persianTrackKey != null ||
-        SubtitleLanguage.PERSIAN in languages || SubtitleLanguage.UNKNOWN in languages
-    val hasEnglish = config.englishTrackKey != null || SubtitleLanguage.ENGLISH in languages
+        SubtitleLanguage.PERSIAN in languages || SubtitleLanguage.UNKNOWN in languages ||
+        options.any { it.mayBePersian }
+    val hasEnglish = config.englishTrackKey != null || SubtitleLanguage.ENGLISH in languages ||
+        (SubtitleLanguage.UNKNOWN in languages && options.size > 1)
     return when (mode) {
         SubtitleMode.OFF -> true
         SubtitleMode.PERSIAN -> hasPersian
