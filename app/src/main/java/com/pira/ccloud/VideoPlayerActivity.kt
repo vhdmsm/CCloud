@@ -29,6 +29,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -41,6 +42,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -73,10 +75,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -84,12 +95,19 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.C
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import com.pira.ccloud.data.model.SubtitleMode
 import com.pira.ccloud.data.model.SubtitleSettings
+import com.pira.ccloud.player.DualSubtitleRenderersFactory
+import com.pira.ccloud.player.DualSubtitleTrackSelector
+import com.pira.ccloud.player.SubtitleLanguage
+import com.pira.ccloud.player.SubtitleTracks
 import com.pira.ccloud.data.model.VideoPlayerSettings
 import com.pira.ccloud.data.model.FontSettings
 import com.pira.ccloud.data.model.WatchedEpisode
@@ -163,6 +181,9 @@ class VideoPlayerActivity : ComponentActivity() {
     private var playerInitialized = false
     private var isActivityResumed = false
     private var hasMarkedAsWatched = false
+    // Remote control actions provided by the player screen
+    private var cycleSubtitleMode: (() -> Unit)? = null
+    private var openTrackSelection: (() -> Unit)? = null
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -188,7 +209,11 @@ class VideoPlayerActivity : ComponentActivity() {
                     seriesId = seriesId,
                     seasonId = seasonId,
                     episodeId = episodeId,
-                    onBack = this::finish
+                    onBack = this::finish,
+                    onRemoteActionsReady = { cycleSubtitles, openTracks ->
+                        cycleSubtitleMode = cycleSubtitles
+                        openTrackSelection = openTracks
+                    }
                 ) { player ->
                     exoPlayer = player
                     playerInitialized = true
@@ -229,6 +254,15 @@ class VideoPlayerActivity : ComponentActivity() {
                     }
                     android.view.KeyEvent.KEYCODE_BACK -> {
                         finish()
+                        return true
+                    }
+                    // Subtitle key: Off -> Persian -> English -> Both
+                    android.view.KeyEvent.KEYCODE_CAPTIONS -> {
+                        cycleSubtitleMode?.invoke()
+                        return true
+                    }
+                    android.view.KeyEvent.KEYCODE_MENU -> {
+                        openTrackSelection?.invoke()
                         return true
                     }
                 }
@@ -337,6 +371,7 @@ fun VideoPlayerScreen(
     seasonId: Int?,
     episodeId: Int?,
     onBack: () -> Unit,
+    onRemoteActionsReady: (cycleSubtitleMode: () -> Unit, openTrackSelection: () -> Unit) -> Unit = { _, _ -> },
     onPlayerReady: (ExoPlayer) -> Unit
 ) {
     val context = LocalContext.current
@@ -358,7 +393,12 @@ fun VideoPlayerScreen(
     // Track selection state
     var showTrackSelectionDialog by remember { mutableStateOf(false) }
     var currentTracks by remember { mutableStateOf(Tracks.EMPTY) }
-    var trackSelector by remember { mutableStateOf<DefaultTrackSelector?>(null) }
+    var trackSelector by remember { mutableStateOf<DualSubtitleTrackSelector?>(null) }
+    
+    // Subtitle text for the dual (Persian + English) overlay
+    var primaryCueText by remember { mutableStateOf("") }
+    var secondaryCueText by remember { mutableStateOf("") }
+    var subtitleMessage by remember { mutableStateOf<String?>(null) }
     
     // Predefined playback speed options
     val speedOptions = remember {
@@ -411,13 +451,42 @@ fun VideoPlayerScreen(
         }
     }
     
+    // Which subtitles are shown (Off / Persian / English / Both) and any manually chosen tracks
+    var subtitleConfig by remember {
+        mutableStateOf(DualSubtitleTrackSelector.SubtitleConfig(subtitleSettings.mode))
+    }
+    
+    fun updateSubtitleConfig(newConfig: DualSubtitleTrackSelector.SubtitleConfig) {
+        val modeChanged = newConfig.mode != subtitleConfig.mode
+        subtitleConfig = newConfig
+        trackSelector?.setSubtitleConfig(newConfig)
+        if (modeChanged) {
+            // Remember the chosen mode for the next video
+            try {
+                StorageUtils.saveSubtitleSettings(
+                    context,
+                    StorageUtils.loadSubtitleSettings(context).copy(mode = newConfig.mode)
+                )
+            } catch (e: Exception) {
+                // Ignore storage errors
+            }
+        }
+    }
+    
     val exoPlayer = remember(context) {
         try {
-            // Create track selector for track selection
-            val selector = DefaultTrackSelector(context)
+            // Track selector that picks subtitle tracks by the chosen subtitle mode
+            val selector = DualSubtitleTrackSelector(context, subtitleConfig.mode)
             trackSelector = selector
             
-            ExoPlayer.Builder(context)
+            // Second subtitle renderer whose cues (English in "Both" mode) are drawn by our overlay
+            val renderersFactory = DualSubtitleRenderersFactory(
+                context,
+                selector,
+                TextOutput { cueGroup -> secondaryCueText = cueGroup.cues.toSubtitleText() }
+            )
+            
+            ExoPlayer.Builder(context, renderersFactory)
                 .setTrackSelector(selector)
                 .build().apply {
                     try {
@@ -448,6 +517,32 @@ fun VideoPlayerScreen(
             override fun onTracksChanged(tracks: Tracks) {
                 currentTracks = tracks
             }
+            
+            override fun onCues(cueGroup: CueGroup) {
+                primaryCueText = cueGroup.cues.toSubtitleText()
+            }
+        }
+    }
+    
+    // Change subtitle mode from the remote and briefly show the result on screen
+    fun cycleSubtitleMode() {
+        val newMode = subtitleConfig.mode.next()
+        updateSubtitleConfig(subtitleConfig.copy(mode = newMode))
+        val available = currentTracks.isEmpty || isSubtitleModeAvailable(newMode, currentTracks, subtitleConfig)
+        subtitleMessage = "Subtitles: ${newMode.label}" + if (available) "" else " (not found in this video)"
+    }
+    
+    LaunchedEffect(Unit) {
+        onRemoteActionsReady(
+            { cycleSubtitleMode() },
+            { showTrackSelectionDialog = true }
+        )
+    }
+    
+    LaunchedEffect(subtitleMessage) {
+        if (subtitleMessage != null) {
+            delay(2500)
+            subtitleMessage = null
         }
     }
     
@@ -816,12 +911,45 @@ fun VideoPlayerScreen(
                     if (playerView is PlayerView) {
                         playerView.setSubtitleTextSize(subtitleSettings.textSize)
                         playerView.setSubtitleColors(subtitleSettings, customTypeface)
+                        // In "Both" mode the two subtitles are drawn stacked by DualSubtitleOverlay
+                        playerView.subtitleView?.visibility =
+                            if (subtitleConfig.mode == SubtitleMode.BOTH) View.GONE else View.VISIBLE
                     }
                 } catch (e: Exception) {
                     // Ignore update errors
                 }
             }
         )
+        
+        if (subtitleConfig.mode == SubtitleMode.BOTH) {
+            DualSubtitleOverlay(
+                primaryText = primaryCueText,
+                secondaryText = secondaryCueText,
+                settings = subtitleSettings,
+                fontFamily = FontManager.loadFontFamily(context, fontSettings.fontType)
+            )
+        }
+        
+        // Short notice after changing the subtitle mode with the remote
+        subtitleMessage?.let { message ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 24.dp),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                Text(
+                    text = message,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontFamily = FontManager.loadFontFamily(context, fontSettings.fontType),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+        }
         
         // Rewind indicator
         if (showRewindIndicator) {
@@ -1132,6 +1260,8 @@ fun VideoPlayerScreen(
             TrackSelectionDialog(
                 tracks = currentTracks,
                 trackSelector = trackSelector,
+                subtitleConfig = subtitleConfig,
+                onSubtitleConfigChange = { updateSubtitleConfig(it) },
                 onDismiss = { showTrackSelectionDialog = false }
             )
         }
@@ -1141,20 +1271,21 @@ fun VideoPlayerScreen(
 @Composable
 fun TrackSelectionDialog(
     tracks: Tracks,
-    trackSelector: DefaultTrackSelector?,
+    trackSelector: DualSubtitleTrackSelector?,
+    subtitleConfig: DualSubtitleTrackSelector.SubtitleConfig,
+    onSubtitleConfigChange: (DualSubtitleTrackSelector.SubtitleConfig) -> Unit,
     onDismiss: () -> Unit
 ) {
     val audioTrackGroups = remember(tracks) {
         tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
     }
     
-    val textTrackGroups = remember(tracks) {
-        tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+    val subtitleTracks = remember(tracks, trackSelector) {
+        subtitleTrackOptions(tracks, trackSelector)
     }
     
     // State for dropdown menus
     var showAudioDropdown by remember { mutableStateOf(false) }
-    var showSubtitleDropdown by remember { mutableStateOf(false) }
     
     // Current selections
     val currentAudioSelection = remember(audioTrackGroups) {
@@ -1164,17 +1295,6 @@ fun TrackSelectionDialog(
                 format.language?.let { 
                     if (it.isNotEmpty()) it else format.label ?: "Track $index"
                 } ?: format.label ?: "Track $index"
-            }
-        } ?: "None"
-    }
-    
-    val currentSubtitleSelection = remember(textTrackGroups) {
-        textTrackGroups.firstOrNull { it.isSelected }?.let { group ->
-            (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { index ->
-                val format = group.getTrackFormat(index)
-                format.language?.let { 
-                    if (it.isNotEmpty()) it else format.label ?: "Subtitle $index"
-                } ?: format.label ?: "Subtitle $index"
             }
         } ?: "None"
     }
@@ -1289,103 +1409,52 @@ fun TrackSelectionDialog(
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // Subtitle track selection
-                if (textTrackGroups.isNotEmpty()) {
-                    Text(
-                        text = "Subtitles",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 8.dp)
+                // Subtitle display mode
+                Text(
+                    text = "Subtitles",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                SubtitleMode.entries.forEach { mode ->
+                    SubtitleModeOption(
+                        mode = mode,
+                        isSelected = subtitleConfig.mode == mode,
+                        isAvailable = tracks.isEmpty || isSubtitleModeAvailable(mode, tracks, subtitleConfig),
+                        onSelect = { onSubtitleConfigChange(subtitleConfig.copy(mode = it)) }
                     )
-                    
-                    // Subtitle dropdown
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showSubtitleDropdown = true }
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .padding(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = currentSubtitleSelection,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = "Expand subtitle tracks",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        
-                        DropdownMenu(
-                            expanded = showSubtitleDropdown,
-                            onDismissRequest = { showSubtitleDropdown = false },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            // None option
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = "None",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                },
-                                onClick = {
-                                    trackSelector?.setParameters(
-                                        trackSelector.buildUponParameters()
-                                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                                    )
-                                    showSubtitleDropdown = false
-                                }
-                            )
-                            
-                            // Subtitle track options
-                            textTrackGroups.forEachIndexed { groupIndex, trackGroup ->
-                                for (i in 0 until trackGroup.length) {
-                                    val format = trackGroup.getTrackFormat(i)
-                                    val trackName = format.language?.let { 
-                                        if (it.isNotEmpty()) it else format.label ?: "Subtitle ${groupIndex + 1}.${i + 1}"
-                                    } ?: format.label ?: "Subtitle ${groupIndex + 1}.${i + 1}"
-                                    
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = trackName,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        },
-                                        onClick = {
-                                            trackSelector?.setParameters(
-                                                trackSelector.buildUponParameters()
-                                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                                    .setOverrideForType(
-                                                        TrackSelectionOverride(trackGroup.mediaTrackGroup, i)
-                                                    )
-                                            )
-                                            showSubtitleDropdown = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else {
+                }
+                
+                if (subtitleTracks.isEmpty()) {
                     Text(
                         text = "No subtitles available",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp)
                     )
+                } else {
+                    // Manual track choice, for files whose tracks are unlabeled or mislabeled
+                    if (subtitleConfig.mode == SubtitleMode.PERSIAN || subtitleConfig.mode == SubtitleMode.BOTH) {
+                        SubtitleTrackPicker(
+                            title = "Persian track",
+                            options = subtitleTracks,
+                            selectedKey = subtitleConfig.persianTrackKey,
+                            playingTrack = subtitleTracks.firstOrNull { it.isSelected && !it.isSecondary },
+                            onSelect = { onSubtitleConfigChange(subtitleConfig.copy(persianTrackKey = it)) }
+                        )
+                    }
+                    if (subtitleConfig.mode == SubtitleMode.ENGLISH || subtitleConfig.mode == SubtitleMode.BOTH) {
+                        SubtitleTrackPicker(
+                            title = "English track",
+                            options = subtitleTracks,
+                            selectedKey = subtitleConfig.englishTrackKey,
+                            playingTrack = subtitleTracks.firstOrNull {
+                                it.isSelected && (it.isSecondary || subtitleConfig.mode == SubtitleMode.ENGLISH)
+                            },
+                            onSelect = { onSubtitleConfigChange(subtitleConfig.copy(englishTrackKey = it)) }
+                        )
+                    }
                 }
             }
         },
@@ -1395,6 +1464,254 @@ fun TrackSelectionDialog(
             }
         }
     )
+}
+
+// A subtitle track found in the video
+private data class SubtitleTrackOption(
+    val key: String,
+    val name: String,
+    val language: SubtitleLanguage,
+    val isSelected: Boolean,
+    // Played by the second subtitle renderer ("Both" mode)
+    val isSecondary: Boolean
+)
+
+private fun subtitleTrackOptions(
+    tracks: Tracks,
+    trackSelector: DualSubtitleTrackSelector?
+): List<SubtitleTrackOption> {
+    val textTracks = tracks.groups
+        .filter { it.type == C.TRACK_TYPE_TEXT }
+        .flatMap { group ->
+            (0 until group.length)
+                .filter { group.isTrackSupported(it) }
+                .map { index -> group to index }
+        }
+        // Group order follows the renderer mapping, which changes with the mode; the container's
+        // track id keeps the numbering stable
+        .sortedBy { (group, index) -> group.getTrackFormat(index).id?.toIntOrNull() ?: Int.MAX_VALUE }
+    return textTracks.mapIndexed { position, (group, index) ->
+        val format = group.getTrackFormat(index)
+        SubtitleTrackOption(
+            key = SubtitleTracks.keyOf(format),
+            name = SubtitleTracks.displayName(format, position + 1),
+            language = SubtitleTracks.classify(format),
+            isSelected = group.isTrackSelected(index),
+            isSecondary = trackSelector?.isSecondaryTrack(format) == true
+        )
+    }
+}
+
+// Whether the video has a track the given mode can show (mirrors DualSubtitleTrackSelector's choice)
+private fun isSubtitleModeAvailable(
+    mode: SubtitleMode,
+    tracks: Tracks,
+    config: DualSubtitleTrackSelector.SubtitleConfig
+): Boolean {
+    val languages = subtitleTrackOptions(tracks, null).map { it.language }
+    val hasPersian = config.persianTrackKey != null ||
+        SubtitleLanguage.PERSIAN in languages || SubtitleLanguage.UNKNOWN in languages
+    val hasEnglish = config.englishTrackKey != null || SubtitleLanguage.ENGLISH in languages
+    return when (mode) {
+        SubtitleMode.OFF -> true
+        SubtitleMode.PERSIAN -> hasPersian
+        SubtitleMode.ENGLISH -> hasEnglish
+        SubtitleMode.BOTH -> hasPersian && hasEnglish
+    }
+}
+
+private fun List<Cue>.toSubtitleText(): String =
+    mapNotNull { it.text?.toString()?.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString("\n")
+
+@Composable
+private fun SubtitleModeOption(
+    mode: SubtitleMode,
+    isSelected: Boolean,
+    isAvailable: Boolean,
+    onSelect: (SubtitleMode) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .selectable(
+                selected = isSelected,
+                role = Role.RadioButton,
+                onClick = { onSelect(mode) }
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = isSelected,
+            onClick = null
+        )
+        Column(modifier = Modifier.padding(start = 8.dp)) {
+            Text(
+                text = mode.label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (!isAvailable) {
+                Text(
+                    text = "Not found in this video",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtitleTrackPicker(
+    title: String,
+    options: List<SubtitleTrackOption>,
+    selectedKey: String?,
+    playingTrack: SubtitleTrackOption?,
+    onSelect: (String?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val autoLabel = "Automatic" + (playingTrack?.let { " (${it.name})" } ?: "")
+    val currentLabel = options.firstOrNull { it.key == selectedKey }?.name ?: autoLabel
+    
+    Text(
+        text = title,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { expanded = true }
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = currentLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = "Choose $title",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = autoLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (selectedKey == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onClick = {
+                    onSelect(null)
+                    expanded = false
+                }
+            )
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = option.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (option.key == selectedKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onClick = {
+                        onSelect(option.key)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+// Persian and English subtitles stacked at the bottom, English above Persian
+@Composable
+private fun DualSubtitleOverlay(
+    primaryText: String,
+    secondaryText: String,
+    settings: SubtitleSettings,
+    fontFamily: FontFamily?
+) {
+    if (primaryText.isEmpty() && secondaryText.isEmpty()) return
+    
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                // Same bottom margin as ExoPlayer's SubtitleView (8% of the height)
+                .padding(start = 24.dp, end = 24.dp, bottom = maxHeight * 0.08f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (secondaryText.isNotEmpty()) {
+                OutlinedSubtitleText(secondaryText, settings, fontFamily)
+            }
+            if (primaryText.isNotEmpty()) {
+                OutlinedSubtitleText(primaryText, settings, fontFamily)
+            }
+        }
+    }
+}
+
+// Styled like setSubtitleColors(): the border color is both the box behind the text and the outline
+@Composable
+private fun OutlinedSubtitleText(
+    text: String,
+    settings: SubtitleSettings,
+    fontFamily: FontFamily?
+) {
+    val outlineWidth = with(LocalDensity.current) { 2.dp.toPx() }
+    val style = TextStyle(
+        fontSize = settings.textSize.sp,
+        fontFamily = fontFamily,
+        textAlign = TextAlign.Center,
+        textDirection = TextDirection.Content
+    )
+    Box(
+        modifier = Modifier
+            .background(Color(settings.borderColor))
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = style.copy(
+                color = Color(settings.borderColor),
+                drawStyle = Stroke(width = outlineWidth, join = StrokeJoin.Round)
+            )
+        )
+        Text(
+            text = text,
+            style = style.copy(color = Color(settings.textColor))
+        )
+    }
 }
 
 fun formatTime(milliseconds: Long): String {

@@ -69,6 +69,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pira.ccloud.BuildConfig
 import com.pira.ccloud.R
+import com.pira.ccloud.data.model.SubtitleMode
 import com.pira.ccloud.data.model.SubtitleSettings
 import com.pira.ccloud.data.model.VideoPlayerSettings
 import com.pira.ccloud.data.model.FontSettings
@@ -601,7 +602,24 @@ fun SettingsScreen(
                                     style = MaterialTheme.typography.titleMedium,
                                     modifier = Modifier.padding(bottom = 12.dp)
                                 )
-                                
+
+                                // Which subtitles to show while playing
+                                Text(
+                                    text = "Subtitle Display",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.padding(bottom = 4.dp)
+                                )
+
+                                SubtitleMode.entries.forEach { mode ->
+                                    SubtitleModeSettingOption(
+                                        mode = mode,
+                                        isSelected = subtitleSettings.mode == mode,
+                                        onSelect = { updateSubtitleSettings(subtitleSettings.copy(mode = it)) }
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
                                 // Text color setting
                                 SubtitleColorSetting(
                                     title = "Text Color",
@@ -1263,6 +1281,41 @@ fun ColorOption(
                 modifier = Modifier.padding(top = 4.dp)
             )
         }
+    }
+}
+
+@Composable
+fun SubtitleModeSettingOption(
+    mode: SubtitleMode,
+    isSelected: Boolean,
+    onSelect: (SubtitleMode) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect(mode) }
+            .focusable()
+            .onKeyEvent { keyEvent ->
+                when (keyEvent.key) {
+                    Key.Enter, Key.Spacebar, Key.DirectionCenter -> {
+                        onSelect(mode)
+                        true // Handled
+                    }
+                    else -> false // Let default handling occur
+                }
+            }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = isSelected,
+            onClick = { onSelect(mode) }
+        )
+        Text(
+            text = mode.label,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 8.dp)
+        )
     }
 }
 
