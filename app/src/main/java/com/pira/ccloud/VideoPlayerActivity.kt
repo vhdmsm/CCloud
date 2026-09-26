@@ -1320,8 +1320,68 @@ fun TrackSelectionDialog(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                // Subtitle display mode
+                Text(
+                    text = "Subtitles",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                // Two per row so all modes fit on a landscape phone without scrolling
+                SubtitleMode.entries.chunked(2).forEach { rowModes ->
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        rowModes.forEach { mode ->
+                            SubtitleModeOption(
+                                mode = mode,
+                                isSelected = subtitleConfig.mode == mode,
+                                isAvailable = tracks.isEmpty || isSubtitleModeAvailable(mode, tracks, subtitleConfig, trackSelector),
+                                onSelect = { onSubtitleConfigChange(subtitleConfig.copy(mode = it)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                // Which subtitle tracks the file contains
+                Text(
+                    text = if (subtitleTracks.isEmpty()) {
+                        "No subtitle tracks in this video"
+                    } else {
+                        "In this video: " + subtitleTracks.joinToString(", ") { it.name }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                if (subtitleTracks.isNotEmpty()) {
+                    // Manual track choice, for files whose tracks are unlabeled or mislabeled
+                    if (subtitleConfig.mode == SubtitleMode.PERSIAN || subtitleConfig.mode == SubtitleMode.BOTH) {
+                        SubtitleTrackPicker(
+                            title = "Persian track",
+                            options = subtitleTracks,
+                            selectedKey = subtitleConfig.persianTrackKey,
+                            playingTrack = subtitleTracks.firstOrNull { it.isSelected && !it.isSecondary },
+                            onSelect = { onSubtitleConfigChange(subtitleConfig.copy(persianTrackKey = it)) }
+                        )
+                    }
+                    if (subtitleConfig.mode == SubtitleMode.ENGLISH || subtitleConfig.mode == SubtitleMode.BOTH) {
+                        SubtitleTrackPicker(
+                            title = "English track",
+                            options = subtitleTracks,
+                            selectedKey = subtitleConfig.englishTrackKey,
+                            playingTrack = subtitleTracks.firstOrNull {
+                                it.isSelected && (it.isSecondary || subtitleConfig.mode == SubtitleMode.ENGLISH)
+                            },
+                            onSelect = { onSubtitleConfigChange(subtitleConfig.copy(englishTrackKey = it)) }
+                        )
+                    }
+                }
+                
                 // Audio track selection
                 if (audioTrackGroups.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "Audio Tracks",
                         style = MaterialTheme.typography.titleMedium,
@@ -1410,56 +1470,6 @@ fun TrackSelectionDialog(
                                 }
                             }
                         }
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Subtitle display mode
-                Text(
-                    text = "Subtitles",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                
-                SubtitleMode.entries.forEach { mode ->
-                    SubtitleModeOption(
-                        mode = mode,
-                        isSelected = subtitleConfig.mode == mode,
-                        isAvailable = tracks.isEmpty || isSubtitleModeAvailable(mode, tracks, subtitleConfig, trackSelector),
-                        onSelect = { onSubtitleConfigChange(subtitleConfig.copy(mode = it)) }
-                    )
-                }
-                
-                if (subtitleTracks.isEmpty()) {
-                    Text(
-                        text = "No subtitles available",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                } else {
-                    // Manual track choice, for files whose tracks are unlabeled or mislabeled
-                    if (subtitleConfig.mode == SubtitleMode.PERSIAN || subtitleConfig.mode == SubtitleMode.BOTH) {
-                        SubtitleTrackPicker(
-                            title = "Persian track",
-                            options = subtitleTracks,
-                            selectedKey = subtitleConfig.persianTrackKey,
-                            playingTrack = subtitleTracks.firstOrNull { it.isSelected && !it.isSecondary },
-                            onSelect = { onSubtitleConfigChange(subtitleConfig.copy(persianTrackKey = it)) }
-                        )
-                    }
-                    if (subtitleConfig.mode == SubtitleMode.ENGLISH || subtitleConfig.mode == SubtitleMode.BOTH) {
-                        SubtitleTrackPicker(
-                            title = "English track",
-                            options = subtitleTracks,
-                            selectedKey = subtitleConfig.englishTrackKey,
-                            playingTrack = subtitleTracks.firstOrNull {
-                                it.isSelected && (it.isSecondary || subtitleConfig.mode == SubtitleMode.ENGLISH)
-                            },
-                            onSelect = { onSubtitleConfigChange(subtitleConfig.copy(englishTrackKey = it)) }
-                        )
                     }
                 }
             }
@@ -1564,11 +1574,11 @@ private fun SubtitleModeOption(
     mode: SubtitleMode,
     isSelected: Boolean,
     isAvailable: Boolean,
-    onSelect: (SubtitleMode) -> Unit
+    onSelect: (SubtitleMode) -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
+        modifier = modifier
             .clip(RoundedCornerShape(8.dp))
             .selectable(
                 selected = isSelected,
