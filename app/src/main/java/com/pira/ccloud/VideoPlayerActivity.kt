@@ -24,6 +24,18 @@ import kotlin.math.abs
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import kotlinx.coroutines.Job
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -155,6 +167,16 @@ fun PlayerView.setSubtitleColors(settings: SubtitleSettings, typeface: Typeface?
     // This is a known limitation of ExoPlayer's subtitle rendering system.
 }
 
+// Remote control hooks the player screen gives to the activity
+class PlayerRemoteActions(
+    val cycleSubtitleMode: () -> Unit,
+    val openTrackSelection: () -> Unit,
+    // Handles a key before the views; true when consumed
+    val onKey: (android.view.KeyEvent) -> Boolean,
+    // Whether an on-screen control has focus (the arrows then move between controls)
+    val isControlFocused: () -> Boolean
+)
+
 class VideoPlayerActivity : ComponentActivity() {
     companion object {
         const val EXTRA_VIDEO_URL = "video_url"
@@ -190,8 +212,7 @@ class VideoPlayerActivity : ComponentActivity() {
     private var isActivityResumed = false
     private var hasMarkedAsWatched = false
     // Remote control actions provided by the player screen
-    private var cycleSubtitleMode: (() -> Unit)? = null
-    private var openTrackSelection: (() -> Unit)? = null
+    private var remoteActions: PlayerRemoteActions? = null
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -218,10 +239,7 @@ class VideoPlayerActivity : ComponentActivity() {
                     seasonId = seasonId,
                     episodeId = episodeId,
                     onBack = this::finish,
-                    onRemoteActionsReady = { cycleSubtitles, openTracks ->
-                        cycleSubtitleMode = cycleSubtitles
-                        openTrackSelection = openTracks
-                    }
+                    onRemoteActionsReady = { remoteActions = it }
                 ) { player ->
                     exoPlayer = player
                     playerInitialized = true
@@ -266,11 +284,11 @@ class VideoPlayerActivity : ComponentActivity() {
                     }
                     // Subtitle key: Off -> Persian -> English -> Both
                     android.view.KeyEvent.KEYCODE_CAPTIONS -> {
-                        cycleSubtitleMode?.invoke()
+                        remoteActions?.cycleSubtitleMode?.invoke()
                         return true
                     }
                     android.view.KeyEvent.KEYCODE_MENU -> {
-                        openTrackSelection?.invoke()
+                        remoteActions?.openTrackSelection?.invoke()
                         return true
                     }
                 }
@@ -279,6 +297,23 @@ class VideoPlayerActivity : ComponentActivity() {
             // Ignore key event errors
         }
         return super.onKeyDown(keyCode, event)
+    }
+    
+    // Sees remote keys before the views, so hidden controls can be brought back
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val actions = remoteActions ?: return super.dispatchKeyEvent(event)
+        if (actions.onKey(event)) return true
+        // With no on-screen control focused, left/right/OK keep seeking and pausing
+        // instead of moving focus between the controls
+        val playbackKeys = setOf(
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
+            android.view.KeyEvent.KEYCODE_DPAD_CENTER
+        )
+        if (!actions.isControlFocused() && event.keyCode in playbackKeys) {
+            return if (event.action == android.view.KeyEvent.ACTION_DOWN) onKeyDown(event.keyCode, event) else true
+        }
+        return super.dispatchKeyEvent(event)
     }
     
     private fun enableFullScreenMode() {
@@ -379,7 +414,7 @@ fun VideoPlayerScreen(
     seasonId: Int?,
     episodeId: Int?,
     onBack: () -> Unit,
-    onRemoteActionsReady: (cycleSubtitleMode: () -> Unit, openTrackSelection: () -> Unit) -> Unit = { _, _ -> },
+    onRemoteActionsReady: (PlayerRemoteActions) -> Unit = {},
     onPlayerReady: (ExoPlayer) -> Unit
 ) {
     val context = LocalContext.current
@@ -387,6 +422,14 @@ fun VideoPlayerScreen(
     var currentPosition by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(0L) }
     var showControls by remember { mutableStateOf(true) }
+    // Remote control navigation of the controls
+    var controlFocused by remember { mutableStateOf(false) }
+    var controlsInteraction by remember { mutableStateOf(0) }
+    var pendingControlFocus by remember { mutableStateOf<ControlFocus?>(null) }
+    var backKeyConsumed by remember { mutableStateOf(false) }
+    val settingsFocusRequester = remember { FocusRequester() }
+    val seekBarFocusRequester = remember { FocusRequester() }
+    var seekJob by remember { mutableStateOf<Job?>(null) }
     var isSeeking by remember { mutableStateOf(false) }
     var playerError by remember { mutableStateOf<String?>(null) }
     var isRetrying by remember { mutableStateOf(false) }
@@ -577,11 +620,106 @@ fun VideoPlayerScreen(
         subtitleMessage = "Subtitles: ${newMode.label}" + if (available) "" else " (not found in this video)"
     }
     
+    // Seek from the remote; like the double tap, buffering after the seek must not pause playback
+    fun seekBy(deltaMs: Long) {
+        val player = exoPlayer ?: return
+        try {
+            val wasPlaying = if (isSeeking) wasPlayingBeforeSeek else isPlaying
+            wasPlayingBeforeSeek = wasPlaying
+            isSeeking = true
+            val newPosition = (player.currentPosition + deltaMs)
+                .coerceIn(0L, player.duration.coerceAtLeast(0L))
+            player.seekTo(newPosition)
+            currentPosition = newPosition
+            if (deltaMs < 0) showRewindIndicator = true else showForwardIndicator = true
+            seekJob?.cancel()
+            seekJob = coroutineScope.launch {
+                delay(200)
+                withTimeoutOrNull(10_000) {
+                    while (player.playbackState != Player.STATE_READY) delay(100)
+                }
+                isSeeking = false
+                player.playWhenReady = wasPlaying
+                isPlaying = wasPlaying
+            }
+        } catch (e: Exception) {
+            // Ignore seek errors
+        }
+    }
+    
+    // Remote control: bring back hidden controls and put focus on the settings button or seek bar
+    fun handleRemoteKey(event: android.view.KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        // Back while moving through the controls hides them instead of leaving the video
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && showControls && controlFocused) {
+                showControls = false
+                controlFocused = false
+                backKeyConsumed = true
+                return true
+            }
+            if (event.action == android.view.KeyEvent.ACTION_UP && backKeyConsumed) {
+                backKeyConsumed = false
+                return true
+            }
+            return false
+        }
+        if (event.action != android.view.KeyEvent.ACTION_DOWN) return false
+        // Any key keeps the controls on screen a little longer
+        controlsInteraction++
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_UP,
+            android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (showControls && controlFocused) return false // move between the controls
+                showControls = true
+                pendingControlFocus = if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
+                    ControlFocus.SETTINGS
+                } else {
+                    ControlFocus.SEEK_BAR
+                }
+                return true
+            }
+            // Skip back/forward, and show where playback is
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (showControls && controlFocused) return false // move between the controls
+                showControls = true
+                val step = videoPlayerSettings.seekTimeSeconds * 1000L
+                seekBy(if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) -step else step)
+                return true
+            }
+            // Still play/pause (handled by the activity), and show the controls
+            android.view.KeyEvent.KEYCODE_DPAD_CENTER -> showControls = true
+        }
+        return false
+    }
+    
     LaunchedEffect(Unit) {
         onRemoteActionsReady(
-            { cycleSubtitleMode() },
-            { showTrackSelectionDialog = true }
+            PlayerRemoteActions(
+                cycleSubtitleMode = { cycleSubtitleMode() },
+                openTrackSelection = { showTrackSelectionDialog = true },
+                onKey = { handleRemoteKey(it) },
+                isControlFocused = { showControls && controlFocused }
+            )
         )
+    }
+    
+    // Focus the requested control once the controls are on screen
+    LaunchedEffect(showControls, pendingControlFocus) {
+        val target = pendingControlFocus ?: return@LaunchedEffect
+        if (!showControls) return@LaunchedEffect
+        withFrameNanos { } // wait until the controls are laid out
+        try {
+            if (target == ControlFocus.SEEK_BAR && !isRetrying) {
+                seekBarFocusRequester.requestFocus()
+            } else {
+                settingsFocusRequester.requestFocus()
+            }
+        } catch (e: Exception) {
+            // Ignore focus errors
+        }
+        pendingControlFocus = null
     }
     
     LaunchedEffect(subtitleMessage) {
@@ -779,11 +917,13 @@ fun VideoPlayerScreen(
     }
     
     // Hide controls after a delay
-    LaunchedEffect(showControls, isPlaying) {
+    LaunchedEffect(showControls, isPlaying, controlsInteraction) {
         try {
             if (showControls && isPlaying) {
-                delay(3000) // Hide controls after 3 seconds
+                // Hide after 3 seconds, or 6 while moving through the controls with the remote
+                delay(if (controlFocused) 6000 else 3000)
                 showControls = false
+                controlFocused = false
             }
         } catch (e: Exception) {
             // Ignore delay errors
@@ -1054,6 +1194,7 @@ fun VideoPlayerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.5f))
+                    .onFocusChanged { controlFocused = it.hasFocus }
             ) {
                 // Top bar with back button and settings
                 Box(
@@ -1069,6 +1210,7 @@ fun VideoPlayerScreen(
                                 color = Color.Black.copy(alpha = 0.7f),
                                 shape = androidx.compose.foundation.shape.CircleShape
                             )
+                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -1087,6 +1229,8 @@ fun VideoPlayerScreen(
                                 shape = androidx.compose.foundation.shape.CircleShape
                             )
                             .align(Alignment.TopEnd)
+                            .focusRequester(settingsFocusRequester)
+                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -1111,6 +1255,7 @@ fun VideoPlayerScreen(
                                 color = Color.Black.copy(alpha = 0.7f),
                                 shape = androidx.compose.foundation.shape.CircleShape
                             )
+                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape)
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -1168,7 +1313,22 @@ fun VideoPlayerScreen(
                                     // Ignore errors
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(seekBarFocusRequester)
+                                .remoteFocusBorder(RoundedCornerShape(12.dp))
+                                // Remote left/right on the seek bar skip back/forward
+                                .onPreviewKeyEvent { keyEvent ->
+                                    val isLeft = keyEvent.key == Key.DirectionLeft
+                                    if (!isLeft && keyEvent.key != Key.DirectionRight) {
+                                        return@onPreviewKeyEvent false
+                                    }
+                                    if (keyEvent.type == KeyEventType.KeyDown) {
+                                        val step = videoPlayerSettings.seekTimeSeconds * 1000L
+                                        seekBy(if (isLeft) -step else step)
+                                    }
+                                    true
+                                }
                         )
                     }
                     
@@ -1231,6 +1391,7 @@ fun VideoPlayerScreen(
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
+                                        .remoteFocusBorder(RoundedCornerShape(8.dp))
                                         .clickable { showSpeedDropdown = true }
                                         .padding(4.dp)
                                 ) {
@@ -1283,6 +1444,7 @@ fun VideoPlayerScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = if (playbackSpeed == 1.0f) FontWeight.Bold else FontWeight.Normal,
                                 modifier = Modifier
+                                    .remoteFocusBorder(RoundedCornerShape(8.dp))
                                     .clickable { playbackSpeed = 1.0f }
                                     .padding(4.dp),
                                 fontFamily = FontManager.loadFontFamily(context, fontSettings.fontType)
@@ -1906,6 +2068,18 @@ private fun OutlinedSubtitleText(
             style = style.copy(color = Color(settings.textColor))
         )
     }
+}
+
+// Which control gets focus when the remote brings the controls back
+private enum class ControlFocus { SETTINGS, SEEK_BAR }
+
+// White border on the focused control, so remote navigation is visible on a TV
+@Composable
+private fun Modifier.remoteFocusBorder(shape: Shape): Modifier {
+    var focused by remember { mutableStateOf(false) }
+    return this
+        .onFocusChanged { focused = it.isFocused }
+        .then(if (focused) Modifier.border(3.dp, Color.White, shape) else Modifier)
 }
 
 fun formatTime(milliseconds: Long): String {
