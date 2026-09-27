@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -70,6 +71,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,7 +91,9 @@ import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.TrackGroup
@@ -106,6 +110,9 @@ import com.pira.ccloud.data.model.SubtitleMode
 import com.pira.ccloud.data.model.SubtitleSettings
 import com.pira.ccloud.player.DualSubtitleRenderersFactory
 import com.pira.ccloud.player.DualSubtitleTrackSelector
+import com.pira.ccloud.player.ExternalSubtitle
+import com.pira.ccloud.player.OnlineSubtitlesState
+import com.pira.ccloud.player.OpenSubtitlesClient
 import com.pira.ccloud.player.SubtitleLanguage
 import com.pira.ccloud.player.SubtitleTracks
 import com.pira.ccloud.data.model.VideoPlayerSettings
@@ -117,6 +124,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 // Extension function to set subtitle text size on PlayerView
 fun PlayerView.setSubtitleTextSize(spSize: Float) {
@@ -473,6 +481,12 @@ fun VideoPlayerScreen(
         }
     }
     
+    // English subtitle downloaded from OpenSubtitles for this video (kept between sessions)
+    val coroutineScope = rememberCoroutineScope()
+    val onlineSubtitles = remember(videoUrl) {
+        OnlineSubtitlesState(context, videoUrl, coroutineScope)
+    }
+
     val exoPlayer = remember(context) {
         try {
             // Track selector that picks subtitle tracks by the chosen subtitle mode
@@ -495,7 +509,7 @@ fun VideoPlayerScreen(
                 .build()
             player.apply {
                 try {
-                    setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
+                    setMediaItem(buildMediaItem(videoUrl, onlineSubtitles.subtitle))
                     prepare()
                     // If we're retrying, seek to the current position
                     if (isRetrying && currentPosition > 0) {
@@ -530,6 +544,31 @@ fun VideoPlayerScreen(
         }
     }
     
+    // Reload the video at the same position when the downloaded subtitle or its timing changes
+    onlineSubtitles.onSubtitleChanged = { subtitle ->
+        exoPlayer?.let { player ->
+            try {
+                val position = player.currentPosition
+                val wasPlaying = player.playWhenReady
+                // Like a seek: buffering after the reload must not be taken as a pause
+                isSeeking = true
+                player.setMediaItem(buildMediaItem(videoUrl, subtitle), position)
+                player.prepare()
+                player.playWhenReady = wasPlaying
+                coroutineScope.launch {
+                    withTimeoutOrNull(10_000) {
+                        while (player.playbackState != Player.STATE_READY) delay(100)
+                    }
+                    isSeeking = false
+                    player.playWhenReady = wasPlaying
+                    isPlaying = wasPlaying
+                }
+            } catch (e: Exception) {
+                // Ignore reload errors
+            }
+        }
+    }
+
     // Change subtitle mode from the remote and briefly show the result on screen
     fun cycleSubtitleMode() {
         val newMode = subtitleConfig.mode.next()
@@ -673,7 +712,7 @@ fun VideoPlayerScreen(
                     try {
                         exoPlayer?.let { player ->
                             // Retry loading the media
-                            player.setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
+                            player.setMediaItem(buildMediaItem(videoUrl, onlineSubtitles.subtitle))
                             player.prepare()
                             // Seek to the stored position after preparing
                             player.seekTo(retryPosition)
@@ -1161,7 +1200,7 @@ fun VideoPlayerScreen(
                                                 // Store current position and playback state before retrying
                                                 val retryPosition = currentPosition
                                                 val wasPlaying = isPlaying // Store whether it was playing before the retry
-                                                player.setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
+                                                player.setMediaItem(buildMediaItem(videoUrl, onlineSubtitles.subtitle))
                                                 player.prepare()
                                                 // Seek to the stored position after preparing
                                                 player.seekTo(retryPosition)
@@ -1268,6 +1307,7 @@ fun VideoPlayerScreen(
                 trackSelector = trackSelector,
                 subtitleConfig = subtitleConfig,
                 onSubtitleConfigChange = { updateSubtitleConfig(it) },
+                onlineSubtitles = onlineSubtitles,
                 onDismiss = { showTrackSelectionDialog = false }
             )
         }
@@ -1280,6 +1320,7 @@ fun TrackSelectionDialog(
     trackSelector: DualSubtitleTrackSelector?,
     subtitleConfig: DualSubtitleTrackSelector.SubtitleConfig,
     onSubtitleConfigChange: (DualSubtitleTrackSelector.SubtitleConfig) -> Unit,
+    onlineSubtitles: OnlineSubtitlesState,
     onDismiss: () -> Unit
 ) {
     val audioTrackGroups = remember(tracks) {
@@ -1307,6 +1348,11 @@ fun TrackSelectionDialog(
     
     AlertDialog(
         onDismissRequest = onDismiss,
+        // Wider than the default on landscape screens, so the options don't wrap and fit in height
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier
+            .fillMaxWidth(0.9f)
+            .widthIn(max = 720.dp),
         title = {
             Text(
                 text = "Track Selection",
@@ -1379,6 +1425,13 @@ fun TrackSelectionDialog(
                     }
                 }
                 
+                // English subtitle from OpenSubtitles, for videos without one (or when it's out of sync)
+                if (OpenSubtitlesClient.isConfigured &&
+                    (subtitleConfig.mode == SubtitleMode.ENGLISH || subtitleConfig.mode == SubtitleMode.BOTH)
+                ) {
+                    OnlineSubtitlesSection(onlineSubtitles)
+                }
+
                 // Audio track selection
                 if (audioTrackGroups.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(16.dp))
@@ -1600,7 +1653,7 @@ private fun SubtitleModeOption(
             )
             if (!isAvailable) {
                 Text(
-                    text = "Not found in this video",
+                    text = "Not in this video",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1690,6 +1743,103 @@ private fun SubtitleTrackPicker(
             }
         }
     }
+}
+
+@Composable
+private fun OnlineSubtitlesSection(state: OnlineSubtitlesState) {
+    Text(
+        text = "English subtitle online (OpenSubtitles)",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+    )
+
+    state.subtitle?.let { subtitle ->
+        Text(
+            text = subtitle.release,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        // Timing correction, for a subtitle that is a little early or late
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { state.shift(-500) }) { Text("Earlier") }
+            Text(
+                text = String.format("%+.1fs", subtitle.offsetMs / 1000f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            TextButton(onClick = { state.shift(500) }) { Text("Later") }
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(onClick = { state.remove() }) { Text("Remove") }
+        }
+    }
+
+    TextButton(
+        onClick = { state.search() },
+        enabled = !state.isBusy
+    ) {
+        Text(if (state.subtitle == null) "Search online" else "Find another")
+    }
+
+    if (state.isBusy) {
+        androidx.compose.material3.LinearProgressIndicator(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+        )
+    }
+
+    state.results.take(10).forEach { result ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = !state.isBusy) { state.download(result) }
+                .padding(vertical = 8.dp, horizontal = 4.dp)
+        ) {
+            Text(
+                text = result.release,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2
+            )
+            Text(
+                text = buildString {
+                    if (result.matchesFile) append("✓ Made for this file · ")
+                    append("${result.downloadCount} downloads")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (result.matchesFile) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    state.message?.let { message ->
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+// Video with the downloaded English subtitle (if any) attached as an extra subtitle track
+private fun buildMediaItem(videoUrl: String, externalSubtitle: ExternalSubtitle?): MediaItem {
+    val builder = MediaItem.Builder().setUri(Uri.parse(videoUrl))
+    if (externalSubtitle != null) {
+        builder.setSubtitleConfigurations(
+            listOf(
+                MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(externalSubtitle.file))
+                    .setId("opensubtitles")
+                    .setMimeType(MimeTypes.APPLICATION_SUBRIP)
+                    .setLanguage("en")
+                    .setLabel(SubtitleTracks.EXTERNAL_LABEL)
+                    .build()
+            )
+        )
+    }
+    return builder.build()
 }
 
 // Persian and English subtitles stacked at the bottom, English above Persian

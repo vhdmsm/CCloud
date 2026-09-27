@@ -7,6 +7,11 @@ enum class SubtitleLanguage { PERSIAN, ENGLISH, OTHER, UNKNOWN }
 
 // Helpers for recognising the language of embedded subtitle tracks (MKV/MP4 soft subs)
 object SubtitleTracks {
+    // Label of the subtitle downloaded from OpenSubtitles (added to the player as an extra track)
+    const val EXTERNAL_LABEL = "English (OpenSubtitles)"
+
+    fun isExternal(format: Format): Boolean = format.label == EXTERNAL_LABEL
+
     private val persianCodes = setOf("fa", "fas", "per", "prs")
     private val englishCodes = setOf("en", "eng")
     private val persianLabelWords = listOf("persian", "farsi", "parsi", "فارسی", "پارسی")
@@ -66,13 +71,16 @@ object SubtitleTracks {
             SubtitleLanguage.OTHER -> format.language ?: "Unknown"
             SubtitleLanguage.UNKNOWN -> "Unknown language"
         }
-        val details = listOfNotNull(
-            format.label?.takeIf { it.isNotBlank() && !it.equals(language, ignoreCase = true) },
-            "forced".takeIf { format.selectionFlags and C.SELECTION_FLAG_FORCED != 0 }
-        )
+        val label = format.label?.takeIf { it.isNotBlank() }
+        // A title that already names the language (e.g. "English (OpenSubtitles)") is shown as is
+        val name = when {
+            label == null -> language
+            label.contains(language, ignoreCase = true) -> label
+            else -> "$language ($label)"
+        }
         return buildString {
-            append("#$position · $language")
-            if (details.isNotEmpty()) append(" (${details.joinToString(", ")})")
+            append("#$position · $name")
+            if (format.selectionFlags and C.SELECTION_FLAG_FORCED != 0) append(" (forced)")
         }
     }
 

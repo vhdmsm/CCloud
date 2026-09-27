@@ -165,6 +165,8 @@ class DualSubtitleTrackSelector(
     private fun best(candidates: List<Candidate>, preferLabeledEnglish: Boolean = false): Candidate? =
         candidates.minWithOrNull(
             compareBy<Candidate>(
+                // A subtitle the user downloaded for this video comes first
+                { if (preferLabeledEnglish && !SubtitleTracks.isExternal(it.format)) 1 else 0 },
                 { if (preferLabeledEnglish && !SubtitleTracks.isLabeledEnglish(it.format)) 1 else 0 },
                 { SubtitleTracks.preferenceRank(it.format) }
             )
