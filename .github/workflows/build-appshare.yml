@@ -79,6 +79,12 @@ jobs:
           echo "storeFile=keystore.jks" >> key.properties
         continue-on-error: true
 
+      # OpenSubtitles API key for online English subtitles; without it the feature is hidden
+      - name: Create secrets properties file
+        run: |
+          echo "OPENSUBTITLES_API_KEY=${{ secrets.OPENSUBTITLES_API_KEY }}" > secrets.properties
+        continue-on-error: true
+
       - name: Build APK
         run: |
           ./gradlew assembleRelease --stacktrace -x lint

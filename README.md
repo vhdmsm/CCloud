@@ -56,6 +56,8 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Multiple Quality Options**: Choose from various quality options for playback and download
 - **Download Options**: Multiple download methods including browser, ADM, and VLC
 - **Fullscreen Experience**: Optimized landscape mode for immersive viewing
+- **Dynamic Subtitles**: Show Persian, English, both at the same time, or no subtitles, using the subtitle tracks inside the video file
+- **Online English Subtitles**: Download English subtitles from OpenSubtitles for videos that don't have them, with timing correction
 
 ### ❤️ Favorites Management
 - **Save Content**: Add movies and series to your favorites list
@@ -149,6 +151,19 @@ To build the release APK:
 ./gradlew assembleRelease
 ```
 
+### OpenSubtitles API Key
+
+Downloading English subtitles from OpenSubtitles needs an API key. Without one the app builds and works normally; only the online subtitle search is hidden.
+
+1. Create a free account on [opensubtitles.com](https://www.opensubtitles.com) and create an API consumer on the [API consumers page](https://www.opensubtitles.com/en/consumers) to get a key.
+2. For local builds, create `secrets.properties` in the project root (it is ignored by git):
+   ```properties
+   OPENSUBTITLES_API_KEY=your_api_key
+   ```
+3. For release builds with GitHub Actions, add a repository secret named `OPENSUBTITLES_API_KEY` (Settings → Secrets and variables → Actions). The build workflow writes it to `secrets.properties`.
+
+No user login is needed: without one, OpenSubtitles allows a few downloads per day for each user's IP address.
+
 ### Fixing Gradle Wrapper Issues
 
 If you encounter Gradle wrapper validation errors (especially in CI/CD environments), you can fix them using the provided scripts:
@@ -217,6 +232,8 @@ The app features a custom video player built with ExoPlayer that supports:
 - Play/Pause controls
 - Progress seeking
 - Subtitle customization
+- Subtitle modes: Persian, English, Persian + English (shown together), or off
+- English subtitles from OpenSubtitles (see [OpenSubtitles API key](#opensubtitles-api-key))
 - Fullscreen landscape mode
 
 ### Settings
@@ -301,7 +318,7 @@ The app uses adaptive navigation:
 ### Media Playback Controls
 - **Play/Pause**: Press the **Select (OK)** button or **Play/Pause** button when focused on the player
 - **Seek Forward/Backward**: Use the **Left/Right** arrow keys to skip 10 seconds
-- **Volume Control**: Use the **Up/Down** arrow keys on the directional pad or volume buttons on the remote
+- **Show Controls**: Press **Up** (settings button) or **Down** (seek bar) to bring back the player controls
 - **Exit Fullscreen**: Press the **Back** button to exit fullscreen mode and return to the content details
 
 ### Video Player Remote Controls (TV)
@@ -310,6 +327,10 @@ When watching videos on Android TV, you can control playback using your remote c
 - **Play/Pause**: Press the **Select (OK)** button or **Play/Pause** media button
 - **Fast Forward**: Press the **Right Arrow** key to skip forward 10 seconds
 - **Rewind**: Press the **Left Arrow** key to skip backward 10 seconds
+- **Subtitle Settings**: Press **Up** to show the controls with the settings button focused, then **Select (OK)** to open the subtitle menu (or press the **Menu** button)
+- **Seek Bar**: Press **Down** to show the controls with the seek bar focused, then **Left/Right** to skip
+- **Subtitle Mode**: Press the **Captions (CC)** button to switch between Off, Persian, English, and Persian + English
+- **Hide Controls**: Press **Back** while moving through the controls
 - **Exit Player**: Press the **Back** button to exit the video player and return to the content details
 
 ### Search Functionality (TV)
