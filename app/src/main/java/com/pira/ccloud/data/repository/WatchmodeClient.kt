@@ -29,8 +29,8 @@ import java.util.concurrent.TimeUnit
 object WatchmodeClient {
     private const val BASE_URL = "https://api.watchmode.com/v1"
     private const val CACHE_TTL_MS = 30L * 24 * 60 * 60 * 1000
-    // Actors whose popularity is read for Famous Actors (each costs a credit the first time)
-    private const val TOP_CAST_COUNT = 3
+    // First billed actors whose popularity is read for the actor sorts (each costs a credit the first time)
+    private const val TOP_CAST_COUNT = 2
     // A key that was rejected or used up its monthly quota is tried again after this
     private const val BLOCKED_BACKOFF_MS = 6L * 60 * 60 * 1000
     // Too many requests this minute, or no connection
@@ -44,7 +44,10 @@ object WatchmodeClient {
     private const val RESERVE_SHARE = 0.2
 
     private val keys: List<String>
-        get() = listOf(BuildConfig.WATCHMODE_API_KEY, BuildConfig.WATCHMODE_API_KEY2, BuildConfig.WATCHMODE_API_KEY3)
+        get() = listOf(
+            BuildConfig.WATCHMODE_API_KEY, BuildConfig.WATCHMODE_API_KEY2, BuildConfig.WATCHMODE_API_KEY3,
+            BuildConfig.WATCHMODE_API_KEY4, BuildConfig.WATCHMODE_API_KEY5
+        )
             .filter { it.isNotEmpty() }
 
     // Monthly quota and credits used per key, from the last response's headers

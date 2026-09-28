@@ -45,6 +45,8 @@ android {
         buildConfigField("String", "WATCHMODE_API_KEY", "\"${apiKey("WATCHMODE_API_KEY")}\"")
         buildConfigField("String", "WATCHMODE_API_KEY2", "\"${apiKey("WATCHMODE_API_KEY2")}\"")
         buildConfigField("String", "WATCHMODE_API_KEY3", "\"${apiKey("WATCHMODE_API_KEY3")}\"")
+        buildConfigField("String", "WATCHMODE_API_KEY4", "\"${apiKey("WATCHMODE_API_KEY4")}\"")
+        buildConfigField("String", "WATCHMODE_API_KEY5", "\"${apiKey("WATCHMODE_API_KEY5")}\"")
         
         // Add memory management options
         multiDexEnabled = true

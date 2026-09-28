@@ -94,6 +94,8 @@ jobs:
           echo "WATCHMODE_API_KEY=${{ secrets.WATCHMODE_API_KEY }}" >> secrets.properties
           echo "WATCHMODE_API_KEY2=${{ secrets.WATCHMODE_API_KEY2 }}" >> secrets.properties
           echo "WATCHMODE_API_KEY3=${{ secrets.WATCHMODE_API_KEY3 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY4=${{ secrets.WATCHMODE_API_KEY4 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY5=${{ secrets.WATCHMODE_API_KEY5 }}" >> secrets.properties
         continue-on-error: true
 
       - name: Build APK

@@ -486,12 +486,12 @@ object MovieRanking {
     }
 
     /**
-     * 0..1 star power of the lead actors from their Watchmode percentiles: the best known counts 70%,
-     * the next 25% and the third 5%, so a big star isn't pulled down by a little-known co-star (or
-     * the dog: "Heart of the Beast" bills Brad Pitt, J.K. Simmons and its dog Uber).
+     * 0..1 star power of the two lead actors from their Watchmode percentiles: the better known
+     * counts 70 parts, the other 25 (about 74% and 26%), so a big star isn't pulled down by a
+     * little-known co-star. Movies cached with a third actor use their two best known.
      */
     fun castScore(percentiles: List<Double>): Double {
-        val weights = listOf(0.70, 0.25, 0.05)
+        val weights = listOf(0.70, 0.25)
         val scores = percentiles.map { percentileScore(it) }.sortedDescending().take(weights.size)
         if (scores.isEmpty()) return 0.0
         return scores.indices.sumOf { scores[it] * weights[it] } / weights.take(scores.size).sum()

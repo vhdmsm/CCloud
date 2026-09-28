@@ -64,7 +64,7 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Single-field sorts**:
   - **Most Popular**: current popularity
   - **Top Rated**: the current IMDB score (from OMDb; the site's score is from when the movie was added), trusted more when many people voted (a 9.0 from a few hundred votes doesn't beat an 8.3 from 100,000)
-  - **Famous Actors**: popularity of the three lead actors
+  - **Famous Actors**: popularity of the two lead actors (the better known counts about 74%)
   - **Most Awards**: Oscar wins and nominations and other awards, from the movie's description when it names them, else OMDb
   - **Newest Release Date**: release date from the movie's description, else the year
 - **Combined sorts**:
@@ -189,9 +189,12 @@ The single-field and combined movie sorts read popularity, actors and release da
 2. For local builds, add them to `secrets.properties` in the project root:
    ```properties
    WATCHMODE_API_KEY=your_watchmode_key
-   # Optional extra Watchmode keys, used in turn when one reaches its monthly quota
+   # Optional extra Watchmode keys (up to 5): requests are spread over all of them, each adds
+   # 120 requests a minute and a monthly quota
    WATCHMODE_API_KEY2=your_second_watchmode_key
    WATCHMODE_API_KEY3=your_third_watchmode_key
+   WATCHMODE_API_KEY4=your_fourth_watchmode_key
+   WATCHMODE_API_KEY5=your_fifth_watchmode_key
    OMDB_API_KEY=your_omdb_key
    # Optional extra OMDb keys, used in turn when one reaches its daily limit
    OMDB_API_KEY2=your_second_omdb_key
@@ -200,7 +203,7 @@ The single-field and combined movie sorts read popularity, actors and release da
    ```
 3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
 
-Watchmode's free plan has a monthly quota: each movie costs 2 credits (the actor sorts a few more; actors are cached). The sorts that use it read the server's newest-first list by release year: this year's and last year's movies are ranked together first (only this year's when credits are low), then each older year as you scroll; when less than 20% of the month's credits are left, only this year's movies get new lookups. Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
+Watchmode's free plan allows 120 requests a minute and 2500 credits a month per key: each movie costs 2 credits (the actor sorts up to 3 more; actors are cached). Requests go to the key with the most room, each kept at 110 a minute, and a lookup waits for room instead of failing. The sorts that use it read the server's newest-first list by release year: this year's and last year's movies are ranked together first (only this year's when credits are low), then each older year as you scroll; when less than 20% of the month's credits are left, only this year's movies get new lookups. Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
 
 OMDb allows 1000 requests a day per key. To save them, only Top Rated, Most Awards and Best Overall use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device (3 days for this year's and last year's movies, whose ratings still move, 30 days for older ones). When a limit is reached (OMDb's daily one or Watchmode's monthly one), the answers already kept on the device are still used, even older ones, so nothing that was fetched is lost.
 
