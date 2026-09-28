@@ -29,7 +29,9 @@ class RankedMovieRepository(
     // Whether the first load may rank the two newest years together (it costs more requests)
     private val mayMergeRecentYears: () -> Boolean = { !WatchmodeClient.isSavingCredits },
     // The data a sort ranks a movie by (null: skip the movie); [cachedOnly] makes no requests
-    private val lookUpFacts: (suspend (movie: Movie, filterType: FilterType, cachedOnly: Boolean) -> MovieFacts?)? = null
+    private val lookUpFacts: (suspend (movie: Movie, filterType: FilterType, cachedOnly: Boolean) -> MovieFacts?)? = null,
+    // Ranks series (given as movies) instead: Watchmode is searched for series
+    private val series: Boolean = false
 ) {
     data class RankedPage(
         val movies: List<Movie>,
@@ -292,13 +294,13 @@ class RankedMovieRepository(
         val info = when {
             // Answers from the cache even when the credits are out
             needsInfo && WatchmodeClient.isConfigured -> if (cachedOnly) {
-                WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, cachedOnly = true)
+                WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, cachedOnly = true, series = series)
             } else {
-                watchmodePermits.withPermit { WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast) }
+                watchmodePermits.withPermit { WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, series = series) }
             }
             // Newest uses a release date Watchmode already gave for another sort, at no cost
             filterType == FilterType.NEWEST && WatchmodeClient.isConfigured ->
-                WatchmodeClient.movie(movie.title, movie.year, withCast = false, cachedOnly = true)
+                WatchmodeClient.movie(movie.title, movie.year, withCast = false, cachedOnly = true, series = series)
             else -> null
         }
         if (info != null && MovieRanking.isExcludedOrigin(info)) return null
@@ -362,6 +364,10 @@ object MovieRanking {
             else -> true
         }
     }
+
+    /** Whether the build has the keys [filterType] needs (sorts without them are hidden). */
+    fun isAvailable(filterType: FilterType): Boolean =
+        (!filterType.needsMovieData || WatchmodeClient.isConfigured) && (!filterType.needsOmdb || OmdbClient.isConfigured)
 
     /** Rated, and below [MIN_IMDB]; 0 means not rated yet. */
     fun isLowRated(imdb: Double): Boolean = imdb > 0.0 && imdb < MIN_IMDB

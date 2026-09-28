@@ -122,14 +122,20 @@ object WatchmodeClient {
     }
 
     /**
-     * Data for the movie with this title and year, or null when Watchmode doesn't know it or
-     * can't answer. [withCast] also reads how popular the lead actors are (more credits).
-     * [cachedOnly] answers from the cache alone, without any request.
+     * Data for the movie (or with [series], the series) with this title and year, or null when
+     * Watchmode doesn't know it or can't answer. [withCast] also reads how popular the lead actors
+     * are (more credits). [cachedOnly] answers from the cache alone, without any request.
      */
-    suspend fun movie(title: String, year: Int, withCast: Boolean, cachedOnly: Boolean = false): MovieInfo? = withContext(Dispatchers.IO) {
+    suspend fun movie(
+        title: String,
+        year: Int,
+        withCast: Boolean,
+        cachedOnly: Boolean = false,
+        series: Boolean = false
+    ): MovieInfo? = withContext(Dispatchers.IO) {
         val query = title.replace(Regex("\\((19|20)\\d{2}\\)"), " ").replace(Regex("\\s+"), " ").trim()
         if (query.isEmpty()) return@withContext null
-        val key = "t:${query.lowercase()}|$year"
+        val key = "${if (series) "s" else "t"}:${query.lowercase()}|$year"
         // Cached answers are free and still used when the credits are out; new lookups for older
         // movies wait while credits are low. A key at its per-minute limit is waited for.
         val mayLookUp = !cachedOnly && isAvailableSoon && allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare)
@@ -137,7 +143,7 @@ object WatchmodeClient {
         val stored = try {
             readCache(key)?.let { JSONObject(it) } ?: run {
                 if (!mayLookUp) return@withContext null
-                val id = findMovie(query, year)
+                val id = findTitle(query, year, series)
                 (if (id == null) JSONObject() else details(id)).also { writeCache(key, it.toString()) }
             }
         } catch (e: IOException) {
@@ -169,16 +175,31 @@ object WatchmodeClient {
         toInfo(stored)
     }
 
-    data class SearchResult(val id: Int, val type: String, val year: Int)
+    data class SearchResult(val id: Int, val type: String, val year: Int, val name: String = "")
 
-    private suspend fun findMovie(query: String, year: Int): Int? {
-        val results = call("/search/", "search_field" to "name", "search_value" to query, "types" to "movie")
+    private suspend fun findTitle(query: String, year: Int, series: Boolean): Int? {
+        val results = call("/search/", "search_field" to "name", "search_value" to query, "types" to if (series) "tv" else "movie")
             .optJSONArray("title_results") ?: return null
-        return pickMovie(
-            (0 until results.length()).map { results.getJSONObject(it) }
-                .map { SearchResult(it.optInt("id"), it.optString("type"), it.optInt("year")) },
-            year
-        )
+        val found = (0 until results.length()).map { results.getJSONObject(it) }
+            .map { SearchResult(it.optInt("id"), it.optString("type"), it.optInt("year"), it.optString("name")) }
+        return if (series) pickSeries(found, year, query) else pickMovie(found, year)
+    }
+
+    /**
+     * The series with this name that started in [year] or before, the closest first: the site may
+     * list a series by a later season's year, Watchmode by its first. Without a name match, one
+     * that started within a year of [year].
+     */
+    fun pickSeries(results: List<SearchResult>, year: Int, query: String): Int? {
+        val shows = results.filter { it.id > 0 && (it.type.startsWith("tv_series") || it.type == "tv_miniseries") }
+        fun normal(name: String) = name.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+        val named = shows.filter { normal(it.name) == normal(query) }
+        val byName = if (year > 0) {
+            named.filter { it.year in 1..(year + 1) }.maxByOrNull { it.year }
+        } else {
+            named.firstOrNull()
+        }
+        return (byName ?: shows.firstOrNull { year > 0 && kotlin.math.abs(it.year - year) <= 1 })?.id
     }
 
     /**

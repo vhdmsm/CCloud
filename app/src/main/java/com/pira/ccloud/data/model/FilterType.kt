@@ -2,7 +2,7 @@ package com.pira.ccloud.data.model
 
 /**
  * Sort options. The first three are sorted by the server; the rest are ranked in the app
- * (movies only) from the server's lists, with data from Watchmode and OMDb.
+ * (movies and series) from the server's lists, with data from Watchmode and OMDb.
  */
 enum class FilterType(
     // Ranked in the app instead of by the server

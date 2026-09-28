@@ -59,9 +59,9 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Dynamic Subtitles**: Show Persian, English, both at the same time, or no subtitles, using the subtitle tracks inside the video file
 - **Online English Subtitles**: Download English subtitles from OpenSubtitles for videos that don't have them, with timing correction
 
-### 🔎 Movie Filters
+### 🔎 Movie and Series Filters
 - **Server sorts**: Default, by year, or by IMDB score, combined with a genre
-- The Movies screen opens on **Best Overall** when the Watchmode and OMDb keys are set up (else the server's default order)
+- The Movies and Series screens open on **Best Overall** when the Watchmode and OMDb keys are set up (else the server's default order); series get the same ranked sorts as movies, matched on Watchmode as series (by name, started in the site's year or before)
 - **Single-field sorts**:
   - **Most Popular**: current popularity
   - **Top Rated**: the current IMDB score (from OMDb; the site's score is from when the movie was added), trusted more when many people voted (a 9.0 from a few hundred votes doesn't beat an 8.3 from 100,000)

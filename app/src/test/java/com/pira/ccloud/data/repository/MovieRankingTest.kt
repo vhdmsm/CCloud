@@ -276,4 +276,20 @@ class MovieRankingTest {
         // The server's own sorts show everything
         assertTrue(MovieRanking.isCandidate(movie(1, 4.0, 2026), FilterType.BY_YEAR))
     }
+
+    @Test
+    fun picksTheSeriesByNameThatStartedByTheSitesYear() {
+        // Watchmode lists a series by its first year; the site may list it by a later season's
+        val results = listOf(
+            WatchmodeClient.SearchResult(3184679, "tv_series", 2022, "The Bear"),
+            WatchmodeClient.SearchResult(3166070, "tv_series", 1962, "The Beary Family"),
+            WatchmodeClient.SearchResult(900, "movie", 2026, "The Bear"),
+            WatchmodeClient.SearchResult(901, "tv_series", 2030, "The Bear")
+        )
+        assertEquals(3184679, WatchmodeClient.pickSeries(results, 2026, "The Bear"))
+        assertEquals(3184679, WatchmodeClient.pickSeries(results, 2022, "the bear"))
+        // No name match: one that started within a year
+        assertEquals(3166070, WatchmodeClient.pickSeries(results, 1963, "Beary"))
+        assertNull(WatchmodeClient.pickSeries(results, 2010, "Unknown"))
+    }
 }

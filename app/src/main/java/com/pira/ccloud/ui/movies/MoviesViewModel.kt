@@ -9,8 +9,8 @@ import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Genre
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.repository.GenreRepository
+import com.pira.ccloud.data.repository.MovieRanking
 import com.pira.ccloud.data.repository.MovieRepository
-import com.pira.ccloud.data.repository.OmdbClient
 import com.pira.ccloud.data.repository.RankedMovieRepository
 import com.pira.ccloud.data.repository.WatchmodeClient
 import com.pira.ccloud.utils.LanguageUtils
@@ -49,7 +49,7 @@ class MoviesViewModel : ViewModel() {
     
     // Best Overall on opening the app when its data sources are set up in the build, else the server's order
     var selectedFilterType by mutableStateOf(
-        if (FilterType.BEST_OVERALL.isAvailable()) FilterType.BEST_OVERALL else FilterType.DEFAULT
+        if (MovieRanking.isAvailable(FilterType.BEST_OVERALL)) FilterType.BEST_OVERALL else FilterType.DEFAULT
     )
         private set
     
@@ -66,10 +66,7 @@ class MoviesViewModel : ViewModel() {
         private set
     
     // Sorts whose data source isn't set up in the build are left out
-    val filterTypes: List<FilterType> = FilterType.entries.filter { it.isAvailable() }
-    
-    private fun FilterType.isAvailable() =
-        (!needsMovieData || WatchmodeClient.isConfigured) && (!needsOmdb || OmdbClient.isConfigured)
+    val filterTypes: List<FilterType> = FilterType.entries.filter { MovieRanking.isAvailable(it) }
     
     private var loadJob: Job? = null
     // Movies the ranked sorts already dealt with (shown or skipped), so the next load doesn't take them again
