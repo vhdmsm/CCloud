@@ -58,6 +58,10 @@ class MoviesViewModel : ViewModel() {
     var rankingAttribution by mutableStateOf<String?>(null)
         private set
     
+    // While a ranked list is still getting movie data (it's shown and re-ranked meanwhile)
+    var rankingProgress by mutableStateOf<String?>(null)
+        private set
+    
     // Sorts whose data source isn't set up in the build are left out
     val filterTypes: List<FilterType> = FilterType.entries.filter {
         (!it.needsMovieData || WatchmodeClient.isConfigured) &&
@@ -87,11 +91,19 @@ class MoviesViewModel : ViewModel() {
     
     fun selectGenre(genreId: Int) {
         selectedGenreId = genreId
-        refresh()
+        showNewList()
     }
     
     fun selectFilterType(filterType: FilterType) {
         selectedFilterType = filterType
+        showNewList()
+    }
+    
+    // The old list (another sort or genre) mustn't stay up while the new one loads
+    private fun showNewList() {
+        movies = emptyList()
+        rankingNotice = null
+        rankingAttribution = null
         refresh()
     }
     
@@ -109,17 +121,28 @@ class MoviesViewModel : ViewModel() {
                     isLoadingMore = true
                 }
                 errorMessage = null
+                rankingProgress = null
                 
                 val lastPage: Int
                 val hasMore: Boolean
                 val newMovies = if (selectedFilterType.isRanked) {
                     if (!append) handledIds = emptySet()
-                    val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, handledIds)
+                    // Earlier batches stay above the one loading; a first page replaces the list
+                    val shownBefore = if (append) movies else emptyList()
+                    val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, handledIds) { update ->
+                        // The batch shows as soon as the server's list is read and is re-ranked as data comes in
+                        movies = shownBefore + update.movies.filter { LanguageUtils.shouldDisplayTitle(it.title) }
+                        rankingNotice = update.notice
+                        rankingAttribution = update.attribution
+                        rankingProgress = update.progress
+                    }
                     handledIds = handledIds + ranked.handledIds
                     rankingNotice = ranked.notice
                     rankingAttribution = ranked.attribution
+                    rankingProgress = null
                     lastPage = ranked.lastPage
                     hasMore = ranked.hasMore
+                    if (append) movies = shownBefore
                     ranked.movies
                 } else {
                     val result = repository.getMovies(page, selectedGenreId, selectedFilterType)
@@ -158,6 +181,7 @@ class MoviesViewModel : ViewModel() {
                 if (generation == loadGeneration) {
                     isLoading = false
                     isLoadingMore = false
+                    rankingProgress = null
                 }
             }
         }

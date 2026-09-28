@@ -72,6 +72,7 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
   - **Popular + Actors**: popularity, how widely known the movie is, and lead actors
   - **Best Overall (All)**: rating (the current IMDB score, 30%), awards (20%), popularity (30%) and actors (20%) together (the year isn't weighed: these sorts already go one year at a time). Recent movies (this year's and last year's), which haven't had time to win all their awards, spread the awards' share evenly over the other three and get their awards added on top, so missing awards cost nothing and early awards still count
 - Indian and Turkish movies are left out of the single-field and combined sorts
+- A ranked list shows as soon as the site's list is read, ranked by the data already on the device, and is ranked again about every second as new data comes in ("Getting movie data: 40 of 180…"); the best rated movies get their data first
 - Each movie's page shows its awards, its current IMDB score with the number of votes, and the value of every criterion (popularity, how well known it is, lead actors, release date, Top Rated and Best Overall scores with their parts)
 - Movie data (popularity, actors) comes from Watchmode, the current IMDB score and awards from OMDb (or awards from the description); the site's own posts (Persian titles) and Indian and Turkish movies (by country or the site's genres) are skipped before any request
 

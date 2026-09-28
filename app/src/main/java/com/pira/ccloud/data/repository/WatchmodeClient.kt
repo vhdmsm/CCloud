@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.pira.ccloud.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -162,21 +165,25 @@ object WatchmodeClient {
             .put("original_language", details.optString("original_language"))
     }
 
-    // The first billed actors with how well known they are; actors' percentiles are cached on their own
-    private fun leadActors(titleId: Int): List<MovieInfo.Actor> {
-        val crew = get("/title/$titleId/cast-crew/").optJSONArray("__array") ?: return emptyList()
-        return (0 until crew.length()).map { crew.getJSONObject(it) }
+    // The first billed actors with how well known they are (asked together); actors' percentiles
+    // are cached on their own
+    private suspend fun leadActors(titleId: Int): List<MovieInfo.Actor> = coroutineScope {
+        val crew = get("/title/$titleId/cast-crew/").optJSONArray("__array") ?: return@coroutineScope emptyList()
+        (0 until crew.length()).map { crew.getJSONObject(it) }
             .filter { it.optString("type").equals("Cast", ignoreCase = true) }
             .sortedBy { it.optInt("order", Int.MAX_VALUE) }
             .take(TOP_CAST_COUNT)
             .map { actor ->
-                val personId = actor.optInt("person_id")
-                val personKey = "p:$personId"
-                val percentile = readCache(personKey)?.toDoubleOrNull() ?: get("/person/$personId/")
-                    .optDouble("relevance_percentile", 0.0)
-                    .also { writeCache(personKey, it.toString()) }
-                MovieInfo.Actor(actor.optString("full_name"), percentile)
+                async {
+                    val personId = actor.optInt("person_id")
+                    val personKey = "p:$personId"
+                    val percentile = readCache(personKey)?.toDoubleOrNull() ?: get("/person/$personId/")
+                        .optDouble("relevance_percentile", 0.0)
+                        .also { writeCache(personKey, it.toString()) }
+                    MovieInfo.Actor(actor.optString("full_name"), percentile)
+                }
             }
+            .awaitAll()
     }
 
     private fun toInfo(stored: JSONObject): MovieInfo {

@@ -73,10 +73,10 @@ object OmdbClient {
 
     /**
      * Awards and rating of the movie with this IMDb id ([year]: its release year, for how long the
-     * answer is kept); null when unknown. When OMDb can't answer (every key
+     * answer is kept); null when unknown. [cachedOnly]: no request. When OMDb can't answer (every key
      * at its daily limit, no connection) an older kept answer is used, so hitting a limit loses nothing.
      */
-    suspend fun details(imdbId: String, year: Int): Details? = withContext(Dispatchers.IO) {
+    suspend fun details(imdbId: String, year: Int, cachedOnly: Boolean = false): Details? = withContext(Dispatchers.IO) {
         if (imdbId.isEmpty() || !isConfigured) return@withContext null
         val ttl = if (year >= Calendar.getInstance().get(Calendar.YEAR) - 1) RECENT_CACHE_TTL_MS else CACHE_TTL_MS
         val cached = readCache(imdbId)
@@ -85,7 +85,7 @@ object OmdbClient {
         }
         memoryCache.remove(imdbId)
         val stale = cached?.let { parseDetails(it.second) }
-        if (System.currentTimeMillis() < offlineUntil) return@withContext stale
+        if (cachedOnly || System.currentTimeMillis() < offlineUntil) return@withContext stale
 
         for (key in keys) {
             if ((keyBlockedUntil[key] ?: 0L) > System.currentTimeMillis()) continue

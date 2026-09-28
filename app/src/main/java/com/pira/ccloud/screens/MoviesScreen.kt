@@ -110,6 +110,15 @@ fun MoviesScreen(
             )
         }
         
+        viewModel.rankingProgress?.let { progress ->
+            Text(
+                text = progress,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
+        }
+        
         viewModel.rankingAttribution?.let { attribution ->
             Text(
                 text = attribution,
@@ -322,9 +331,10 @@ fun MovieGrid(
                 }
             )
             
-            // Load more when we're near the end of the list
+            // Load more when we're near the end of the list (asked again when a load ends, as a
+            // ranked list shows while it loads)
             if (index >= moviesList.size - 3) {
-                LaunchedEffect(Unit) {
+                LaunchedEffect(moviesList.size, isLoading, isLoadingMore) {
                     onLoadMore()
                 }
             }

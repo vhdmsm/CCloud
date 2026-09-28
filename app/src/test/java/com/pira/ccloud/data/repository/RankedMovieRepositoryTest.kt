@@ -75,4 +75,36 @@ class RankedMovieRepositoryTest {
         val result = repository(pages).getRankedMovies(0, 0, FilterType.NEWEST, emptySet())
         assertEquals(listOf(1, 2, 3), result.movies.map { it.id })
     }
+
+    @Test
+    fun showsTheBatchAtOnceAndRanksItAgainAsDataComesIn() = runBlocking {
+        // Movie 3 is known (from the cache) to be Indian, so it's skipped without any request
+        val pages = listOf(listOf(movie(1, 2026).copy(imdb = 8.0), movie(2, 2026).copy(imdb = 6.0), movie(3, 2026)))
+        val popularity = mapOf(1 to 0.2, 2 to 0.9)
+        val requested = mutableListOf<Int>()
+        val repo = RankedMovieRepository(
+            { page, _, _ -> pages.getOrElse(page) { emptyList() } },
+            { false },
+            { movie, _, cachedOnly ->
+                when {
+                    movie.id == 3 -> null
+                    cachedOnly -> RankedMovieRepository.MovieFacts(movie, null, null)
+                    else -> {
+                        synchronized(requested) { requested += movie.id }
+                        val info = MovieInfo(popularity.getValue(movie.id), 0.5, 0.5, null, "", "tt1", "en")
+                        RankedMovieRepository.MovieFacts(movie, info, null)
+                    }
+                }
+            }
+        )
+        val updates = mutableListOf<RankedMovieRepository.RankedPage>()
+        val result = repo.getRankedMovies(0, 0, FilterType.MOST_POPULAR, emptySet()) { updates += it }
+        // First shown by IMDB (no data yet), with the progress
+        assertEquals(listOf(1, 2), updates.first().movies.map { it.id })
+        assertEquals("Getting movie data: 0 of 3…", updates.first().progress)
+        // Then by popularity once the data is in; the skipped movie is never asked about
+        assertEquals(listOf(2, 1), result.movies.map { it.id })
+        assertEquals(null, result.progress)
+        assertEquals(setOf(1, 2), requested.toSet())
+    }
 }
