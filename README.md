@@ -195,6 +195,7 @@ The single-field and combined movie sorts read popularity, actors and release da
    # Optional extra OMDb keys, used in turn when one reaches its daily limit
    OMDB_API_KEY2=your_second_omdb_key
    OMDB_API_KEY3=your_third_omdb_key
+   OMDB_API_KEY4=your_fourth_omdb_key
    ```
 3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
 

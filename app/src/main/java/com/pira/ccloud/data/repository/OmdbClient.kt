@@ -25,7 +25,7 @@ object OmdbClient {
     private const val OFFLINE_BACKOFF_MS = 60_000L
 
     private val keys: List<String>
-        get() = listOf(BuildConfig.OMDB_API_KEY, BuildConfig.OMDB_API_KEY2, BuildConfig.OMDB_API_KEY3).filter { it.isNotEmpty() }
+        get() = listOf(BuildConfig.OMDB_API_KEY, BuildConfig.OMDB_API_KEY2, BuildConfig.OMDB_API_KEY3, BuildConfig.OMDB_API_KEY4).filter { it.isNotEmpty() }
 
     val isConfigured: Boolean get() = keys.isNotEmpty()
 

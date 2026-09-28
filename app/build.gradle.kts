@@ -39,6 +39,7 @@ android {
         buildConfigField("String", "OMDB_API_KEY", "\"${apiKey("OMDB_API_KEY")}\"")
         buildConfigField("String", "OMDB_API_KEY2", "\"${apiKey("OMDB_API_KEY2")}\"")
         buildConfigField("String", "OMDB_API_KEY3", "\"${apiKey("OMDB_API_KEY3")}\"")
+        buildConfigField("String", "OMDB_API_KEY4", "\"${apiKey("OMDB_API_KEY4")}\"")
         // Watchmode API keys for popularity, actors and release dates, used in turn when one reaches its
         // monthly quota; empty hides the sorts that need them
         buildConfigField("String", "WATCHMODE_API_KEY", "\"${apiKey("WATCHMODE_API_KEY")}\"")
