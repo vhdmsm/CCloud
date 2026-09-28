@@ -176,7 +176,7 @@ class MovieRankingTest {
         val parts = MovieRanking.bestOverallParts(thisYear, currentYear)
         assertTrue(parts.awardsSpread)
         assertEquals(0.0, parts.awards, 1e-9)
-        assertEquals(0.45 * (7.9 - 5.0) / 4.0, parts.rating, 0.01)
+        assertEquals((0.30 + 0.25 / 3) * (7.9 - 5.0) / 4.0, parts.rating, 0.01)
         // The same movie from last year gets no such help
         val lastYear = MovieFacts(movie(2, 7.9, currentYear - 1), info(popularity = 99.996, relevance = 99.873, cast = 0.5), null)
         assertFalse(MovieRanking.bestOverallParts(lastYear, currentYear).awardsSpread)

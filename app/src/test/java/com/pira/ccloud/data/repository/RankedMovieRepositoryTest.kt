@@ -52,4 +52,12 @@ class RankedMovieRepositoryTest {
         assertEquals(setOf(3, 4), result.movies.map { it.id }.toSet())
         assertTrue(result.handledIds.containsAll(listOf(1, 2)))
     }
+
+    @Test
+    fun newestKeepsTheServersOrderWithinAYear() = runBlocking {
+        // Same year, no dates known: the server's newest-added-first order stays (not the IMDB order)
+        val pages = listOf(listOf(movie(1, 2026).copy(imdb = 6.0), movie(2, 2026).copy(imdb = 9.0), movie(3, 2026).copy(imdb = 7.5)))
+        val result = repository(pages).getRankedMovies(0, 0, FilterType.NEWEST, emptySet())
+        assertEquals(listOf(1, 2, 3), result.movies.map { it.id })
+    }
 }

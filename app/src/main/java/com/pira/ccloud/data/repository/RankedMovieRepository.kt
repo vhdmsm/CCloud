@@ -99,11 +99,11 @@ class RankedMovieRepository(
             batch.isNotEmpty() && batch.none { it.info?.castPopularity != null }
         val omdbMissing = filterType.needsOmdb && !OmdbClient.isAvailable && batch.any { it.awards == null }
         val year = Calendar.getInstance().get(Calendar.YEAR)
-        val ranked = batch.sortedWith(
-            compareByDescending<MovieFacts> {
-                if (dataMissing || castMissing) it.movie.imdb else MovieRanking.score(filterType, it, year)
-            }.thenByDescending { it.movie.imdb }
-        )
+        val byScore = compareByDescending<MovieFacts> {
+            if (dataMissing || castMissing) it.movie.imdb else MovieRanking.score(filterType, it, year)
+        }
+        // Ties go to the better IMDB score; for Newest the server's order (newest added first) stays
+        val ranked = batch.sortedWith(if (filterType == FilterType.NEWEST) byScore else byScore.thenByDescending { it.movie.imdb })
         val notice = when {
             dataMissing -> "Movie data from Watchmode isn't available right now (monthly limit or no connection), showing movies by IMDB score"
             castMissing -> "Actor data isn't available right now, showing movies by IMDB score"
@@ -149,10 +149,13 @@ class RankedMovieRepository(
             async {
                 val describedAwards = if (filterType.needsOmdb) MovieDescription.awards(movie) else null
                 val needsInfo = filterType.needsMovieData || (filterType.needsOmdb && describedAwards == null)
-                val info = if (needsInfo && WatchmodeClient.isAvailable) {
-                    permits.watchmode.withPermit { WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast) }
-                } else {
-                    null
+                val info = when {
+                    needsInfo && WatchmodeClient.isAvailable ->
+                        permits.watchmode.withPermit { WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast) }
+                    // Newest uses a release date Watchmode already gave for another sort, at no cost
+                    filterType == FilterType.NEWEST && WatchmodeClient.isConfigured ->
+                        WatchmodeClient.movie(movie.title, movie.year, withCast = false, cachedOnly = true)
+                    else -> null
                 }
                 if (info != null && MovieRanking.isExcludedOrigin(info)) return@async null
                 val awards = describedAwards ?: if (filterType.needsOmdb && info != null && info.imdbId.isNotEmpty()) {
@@ -252,14 +255,20 @@ object MovieRanking {
         return logScale(points, 200.0)
     }
 
+    // Best Overall weights; they add up to 1
+    private const val RATING_WEIGHT = 0.30
+    private const val AWARDS_WEIGHT = 0.25
+    private const val POPULARITY_WEIGHT = 0.30
+    private const val ACTORS_WEIGHT = 0.15
+
     /**
-     * 0..1 mix of rating (35%), awards (30%), popularity (25%) and cast (10%). Missing parts count as
-     * zero. The release year isn't weighed: the list is read newest first, so the movies ranked
-     * together are from about the same year already.
+     * 0..1 mix of rating (the server's IMDB, 30%), awards (25%), popularity (30%) and cast (15%).
+     * Missing parts count as zero. The release year isn't weighed: the list is read one year at a
+     * time, so the movies ranked together are from the same year already.
      *
      * This year's movies haven't had time to win awards, so they may spread the awards' share evenly
-     * over the rest instead: rating 45%, popularity 35%, cast 20%. Whichever is higher counts, so an
-     * early nomination never lowers the score.
+     * over the other three instead. Whichever is higher counts, so an early nomination never lowers
+     * the score.
      */
     fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
         bestOverallParts(facts, currentYear).total
@@ -283,17 +292,18 @@ object MovieRanking {
         val popularity = info?.popularity ?: 0.0
         val actors = info?.castPopularity ?: 0.0
         val withAwards = BestOverallParts(
-            rating = 0.35 * rating,
-            awards = 0.30 * (facts.awards?.let { awardsScore(it) } ?: 0.0),
-            popularity = 0.25 * popularity,
-            actors = 0.10 * actors
+            rating = RATING_WEIGHT * rating,
+            awards = AWARDS_WEIGHT * (facts.awards?.let { awardsScore(it) } ?: 0.0),
+            popularity = POPULARITY_WEIGHT * popularity,
+            actors = ACTORS_WEIGHT * actors
         )
         if (facts.movie.year < currentYear) return withAwards
+        val share = AWARDS_WEIGHT / 3
         val spread = BestOverallParts(
-            rating = 0.45 * rating,
+            rating = (RATING_WEIGHT + share) * rating,
             awards = 0.0,
-            popularity = 0.35 * popularity,
-            actors = 0.20 * actors,
+            popularity = (POPULARITY_WEIGHT + share) * popularity,
+            actors = (ACTORS_WEIGHT + share) * actors,
             awardsSpread = true
         )
         return if (spread.total > withAwards.total) spread else withAwards
