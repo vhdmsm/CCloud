@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 
 class MoviesViewModel : ViewModel() {
     private val repository = MovieRepository()
-    private val rankedRepository = RankedMovieRepository(repository)
+    private val rankedRepository = RankedMovieRepository(repository::getMovies)
     private val genreRepository = GenreRepository()
     
     var movies by mutableStateOf<List<Movie>>(emptyList())
@@ -65,6 +65,8 @@ class MoviesViewModel : ViewModel() {
     }
     
     private var loadJob: Job? = null
+    // Movies the ranked sorts already dealt with (shown or skipped), so the next load doesn't take them again
+    private var handledIds: Set<Int> = emptySet()
     // Bumped on every load, so only the latest one updates the loading and error state
     private var loadGeneration = 0
     
@@ -93,13 +95,15 @@ class MoviesViewModel : ViewModel() {
         refresh()
     }
     
-    fun loadMovies(page: Int = 0) {
+    // [append] adds to the list; otherwise the list is replaced (a ranked list's next load may start
+    // on the page before, to read the rest of a page that ran into the next year)
+    fun loadMovies(page: Int = 0, append: Boolean = page > 0) {
         // A new first page replaces the list, so a slower load for the old filter must not land on it
-        if (page == 0) loadJob?.cancel()
+        if (!append) loadJob?.cancel()
         val generation = ++loadGeneration
         loadJob = viewModelScope.launch {
             try {
-                if (page == 0) {
+                if (!append) {
                     isLoading = true
                 } else {
                     isLoadingMore = true
@@ -109,8 +113,9 @@ class MoviesViewModel : ViewModel() {
                 val lastPage: Int
                 val hasMore: Boolean
                 val newMovies = if (selectedFilterType.isRanked) {
-                    val shownIds = if (page == 0) emptySet() else movies.map { it.id }.toSet()
-                    val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, shownIds)
+                    if (!append) handledIds = emptySet()
+                    val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, handledIds)
+                    handledIds = handledIds + ranked.handledIds
                     rankingNotice = ranked.notice
                     rankingAttribution = ranked.attribution
                     lastPage = ranked.lastPage
@@ -138,7 +143,7 @@ class MoviesViewModel : ViewModel() {
                     filteredMovies.isNotEmpty()
                 }
                 
-                if (page == 0) {
+                if (!append) {
                     movies = filteredMovies
                 } else {
                     movies = movies + filteredMovies
@@ -160,12 +165,13 @@ class MoviesViewModel : ViewModel() {
     
     fun loadMoreMovies() {
         if (!isLoading && !isLoadingMore && canLoadMore) {
-            loadMovies(currentPage + 1)
+            loadMovies(currentPage + 1, append = true)
         }
     }
     
+    // A failed first load starts over; a failed load-more tries the same pages again
     fun retry() {
-        loadMovies(currentPage)
+        if (movies.isEmpty()) refresh() else loadMovies(currentPage + 1, append = true)
     }
     
     fun refresh() {

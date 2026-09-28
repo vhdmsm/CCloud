@@ -198,7 +198,7 @@ The single-field and combined movie sorts read popularity, actors and release da
    ```
 3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
 
-Watchmode's free plan has a monthly quota: each movie costs 2 credits (the actor sorts a few more; actors are cached). The sorts that use it read the server's newest-first list, so this year's movies are looked up first and older years as you scroll; when less than 20% of the month's credits are left, only this year's movies get new lookups. Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
+Watchmode's free plan has a monthly quota: each movie costs 2 credits (the actor sorts a few more; actors are cached). The sorts that use it read the server's newest-first list one release year at a time: all of this year's movies are ranked together, then last year's as you scroll, and so on; when less than 20% of the month's credits are left, only this year's movies get new lookups. Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
 
 OMDb allows 1000 requests a day per key. To save them, only the award sorts (Most Awards, Best Overall) use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device for 30 days.
 

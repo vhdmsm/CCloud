@@ -18,13 +18,16 @@ import kotlin.math.log10
  * it and ranks them in the app, so every loaded batch is ordered best first.
  */
 class RankedMovieRepository(
-    private val movieRepository: MovieRepository = MovieRepository()
+    // A page of the server's list: page, genre, server sort
+    private val fetchPage: suspend (Int, Int, FilterType) -> List<Movie> = MovieRepository()::getMovies
 ) {
     data class RankedPage(
         val movies: List<Movie>,
         // Last server page read; the next load starts after it
         val lastPage: Int,
         val hasMore: Boolean,
+        // Every movie this load dealt with, shown or skipped, so later loads don't take it again
+        val handledIds: Set<Int>,
         // Shown above the list when movie or award data is missing
         val notice: String?,
         // Credit for the data source, shown under the sort when Watchmode data is used (its terms ask for it)
@@ -38,26 +41,55 @@ class RankedMovieRepository(
         val awards: OmdbClient.Awards?
     )
 
+    /** [handledIds]: movies earlier loads of this list already dealt with (shown or skipped). */
     suspend fun getRankedMovies(
         page: Int,
         genreId: Int,
         filterType: FilterType,
-        shownIds: Set<Int>
+        handledIds: Set<Int>
     ): RankedPage {
-        val seen = shownIds.toMutableSet()
+        val seen = handledIds.toMutableSet()
         val batch = mutableListOf<MovieFacts>()
         val permits = Permits()
-        val maxPages = if (filterType.needsOmdb) MAX_PAGES_PER_LOAD_OMDB else MAX_PAGES_PER_LOAD
         var currentPage = page
+        var lastPage = page
         var hasMore = true
-        // Skipped and weaker movies leave gaps, so read on until the batch fills
-        while (true) {
-            val candidates = readServerPage(currentPage, genreId, filterType)
-            hasMore = candidates.isNotEmpty()
-            val fresh = candidates.filter { seen.add(it.id) && MovieRanking.isCandidate(it, filterType) }
-            batch += addFacts(fresh, filterType, permits)
-            if (batch.size >= MIN_BATCH_SIZE || !hasMore || currentPage - page + 1 >= maxPages) break
-            currentPage++
+        if (readsNewestFirst(filterType)) {
+            // One release year per load: all of this year's movies are ranked together, then last
+            // year's on the next load, and so on. A page that runs into the next year is read again
+            // next time for the rest.
+            var yearsRead = 0
+            // A year whose movies were all skipped (e.g. only Indian ones) gives nothing to show, so go on
+            while (batch.isEmpty() && hasMore && yearsRead < MAX_YEARS_PER_LOAD) {
+                yearsRead++
+                var batchYear: Int? = null
+                val firstPage = currentPage
+                while (true) {
+                    val candidates = readServerPage(currentPage, genreId, filterType)
+                    hasMore = candidates.isNotEmpty()
+                    val unseen = candidates.filter { it.id !in seen }
+                    if (batchYear == null) batchYear = unseen.maxOfOrNull { it.year }
+                    val year = batchYear
+                    val (sameYear, older) = if (year == null) emptyList<Movie>() to emptyList() else unseen.partition { it.year >= year }
+                    sameYear.forEach { seen.add(it.id) }
+                    batch += addFacts(sameYear.filter { MovieRanking.isCandidate(it, filterType) }, filterType, permits)
+                    lastPage = if (older.isNotEmpty()) currentPage - 1 else currentPage
+                    if (older.isNotEmpty() || !hasMore || currentPage - firstPage + 1 >= MAX_PAGES_PER_YEAR) break
+                    currentPage++
+                }
+                currentPage = lastPage + 1
+            }
+        } else {
+            // Skipped and weaker movies leave gaps, so read on until the batch fills
+            while (true) {
+                val candidates = readServerPage(currentPage, genreId, filterType)
+                hasMore = candidates.isNotEmpty()
+                val fresh = candidates.filter { seen.add(it.id) && MovieRanking.isCandidate(it, filterType) }
+                batch += addFacts(fresh, filterType, permits)
+                lastPage = currentPage
+                if (batch.size >= MIN_BATCH_SIZE || !hasMore || currentPage - page + 1 >= MAX_PAGES_PER_LOAD) break
+                currentPage++
+            }
         }
 
         // Without movie data the sorts fall back to IMDB order
@@ -81,18 +113,21 @@ class RankedMovieRepository(
             else -> null
         }
         val attribution = if (batch.any { it.info != null }) "Movie data from Watchmode" else null
-        return RankedPage(ranked.map { it.movie }, currentPage, hasMore, notice, attribution)
+        return RankedPage(ranked.map { it.movie }, lastPage, hasMore, seen, notice, attribution)
     }
 
     // Sorts that ask Watchmode or OMDb read only the newest-first list: their limited requests go to
     // this year's movies first, then last year's and so on as the list is scrolled (and cached)
+    private fun readsNewestFirst(filterType: FilterType) =
+        filterType.needsMovieData || filterType.needsOmdb || filterType == FilterType.NEWEST
+
     private suspend fun readServerPage(page: Int, genreId: Int, filterType: FilterType): List<Movie> =
-        if (filterType.needsMovieData || filterType.needsOmdb || filterType == FilterType.NEWEST) {
-            movieRepository.getMovies(page, genreId, FilterType.BY_YEAR)
+        if (readsNewestFirst(filterType)) {
+            fetchPage(page, genreId, FilterType.BY_YEAR)
         } else {
             coroutineScope {
-                val byImdb = async { movieRepository.getMovies(page, genreId, FilterType.BY_IMDB) }
-                val byYear = async { movieRepository.getMovies(page, genreId, FilterType.BY_YEAR) }
+                val byImdb = async { fetchPage(page, genreId, FilterType.BY_IMDB) }
+                val byYear = async { fetchPage(page, genreId, FilterType.BY_YEAR) }
                 byImdb.await() + byYear.await()
             }
         }
@@ -133,7 +168,9 @@ class RankedMovieRepository(
     private companion object {
         const val MIN_BATCH_SIZE = 12
         const val MAX_PAGES_PER_LOAD = 3
-        const val MAX_PAGES_PER_LOAD_OMDB = 2
+        // A year with more pages than this is ranked in parts (a limit on the requests of one load)
+        const val MAX_PAGES_PER_YEAR = 10
+        const val MAX_YEARS_PER_LOAD = 3
     }
 }
 
@@ -287,12 +324,12 @@ object MovieRanking {
     }
 
     /**
-     * 0..1 star power of the lead actors from their Watchmode percentiles: the best known counts 50%,
-     * the next 30% and the third 20%, so a big star isn't pulled down by a little-known co-star (or
+     * 0..1 star power of the lead actors from their Watchmode percentiles: the best known counts 70%,
+     * the next 25% and the third 5%, so a big star isn't pulled down by a little-known co-star (or
      * the dog: "Heart of the Beast" bills Brad Pitt, J.K. Simmons and its dog Uber).
      */
     fun castScore(percentiles: List<Double>): Double {
-        val weights = listOf(0.5, 0.3, 0.2)
+        val weights = listOf(0.70, 0.25, 0.05)
         val scores = percentiles.map { percentileScore(it) }.sortedDescending().take(weights.size)
         if (scores.isEmpty()) return 0.0
         return scores.indices.sumOf { scores[it] * weights[it] } / weights.take(scores.size).sum()
