@@ -14,5 +14,11 @@ data class MovieInfo(
     val releaseDate: String,
     // "tt1234567", empty when unknown; used to read awards from OMDb
     val imdbId: String,
-    val originalLanguage: String
-)
+    val originalLanguage: String,
+    // Watchmode's percentiles (0..100) and lead actors, shown on the movie page
+    val popularityPercentile: Double = 0.0,
+    val relevancePercentile: Double = 0.0,
+    val actors: List<Actor> = emptyList()
+) {
+    data class Actor(val name: String, val percentile: Double)
+}

@@ -72,6 +72,7 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
   - **Popular + Actors**: popularity, how widely known the movie is, and lead actors
   - **Best Overall (All)**: rating (35%), release year (25%), actors (15%), awards (15%) and popularity (10%) together
 - Indian and Turkish movies are left out of the single-field and combined sorts
+- Each movie's page shows its awards and the value of every criterion (popularity, how well known it is, lead actors, release date, Top Rated and Best Overall scores with their parts)
 - Movie data (popularity, actors) comes from Watchmode, awards from the description or OMDb; the site's own posts (Persian titles) and Indian and Turkish movies (by country or the site's genres) are skipped before any request
 
 ### ❤️ Favorites Management

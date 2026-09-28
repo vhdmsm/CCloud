@@ -38,13 +38,13 @@ class MovieRankingTest {
     fun parsesOmdbAwardSummaries() {
         assertEquals(
             OmdbClient.Awards(oscarWins = 3, oscarNominations = 0, wins = 94, nominations = 172),
-            OmdbClient.parseAwards("Won 3 Oscars. 94 wins & 172 nominations total")
+            OmdbClient.parseAwards("Won 3 Oscars. 94 wins & 172 nominations total").copy(summary = "")
         )
         assertEquals(
             OmdbClient.Awards(oscarWins = 0, oscarNominations = 1, wins = 5, nominations = 20),
-            OmdbClient.parseAwards("Nominated for 1 Oscar. 5 wins & 20 nominations total")
+            OmdbClient.parseAwards("Nominated for 1 Oscar. 5 wins & 20 nominations total").copy(summary = "")
         )
-        assertEquals(OmdbClient.Awards(0, 0, 1, 0), OmdbClient.parseAwards("1 win"))
+        assertEquals(OmdbClient.Awards(0, 0, 1, 0, "1 win"), OmdbClient.parseAwards("1 win"))
         assertEquals(OmdbClient.Awards(0, 0, 0, 0), OmdbClient.parseAwards("N/A"))
     }
 
@@ -127,6 +127,15 @@ class MovieRankingTest {
         assertTrue(shawshank - rentalFamily > 0.2)
         assertTrue(rentalFamily - theBox > 0.4)
         assertEquals(0.0, MovieRanking.percentileScore(0.0), 0.01)
+    }
+
+    @Test
+    fun bestOverallPartsAddUpToTheScore() {
+        val facts = MovieFacts(movie(1, 7.9, currentYear), info(popularity = 99.996, relevance = 99.873, cast = 0.5), null)
+        val parts = MovieRanking.bestOverallParts(facts, currentYear)
+        assertEquals(MovieRanking.bestOverallScore(facts, currentYear), parts.total, 1e-9)
+        assertEquals(0.25, parts.recency, 1e-9)
+        assertEquals(0.0, parts.awards, 1e-9)
     }
 
     @Test

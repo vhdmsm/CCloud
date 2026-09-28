@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Calendar
@@ -108,10 +109,12 @@ object WatchmodeClient {
             }
             if (!stored.has("id")) return@withContext null
 
-            if (withCast && mayLookUp && !stored.has("cast_score") &&
+            if (withCast && mayLookUp && !stored.has("cast") &&
                 !MovieRanking.isExcludedLanguage(stored.optString("original_language"))
             ) {
-                stored.put("cast_score", castScore(stored.getInt("id")))
+                val actors = leadActors(stored.getInt("id"))
+                stored.put("cast", JSONArray(actors.map { JSONObject().put("name", it.name).put("percentile", it.percentile) }))
+                stored.put("cast_score", if (actors.isEmpty()) 0.0 else actors.sumOf { MovieRanking.percentileScore(it.percentile) } / actors.size)
                 writeCache(key, stored.toString())
             }
             toInfo(stored)
@@ -159,35 +162,42 @@ object WatchmodeClient {
             .put("original_language", details.optString("original_language"))
     }
 
-    // Average fame score (0..1) of the first billed actors; actors' percentiles are cached on their own
-    private fun castScore(titleId: Int): Double {
-        val crew = get("/title/$titleId/cast-crew/").optJSONArray("__array") ?: return 0.0
-        val actors = (0 until crew.length()).map { crew.getJSONObject(it) }
+    // The first billed actors with how well known they are; actors' percentiles are cached on their own
+    private fun leadActors(titleId: Int): List<MovieInfo.Actor> {
+        val crew = get("/title/$titleId/cast-crew/").optJSONArray("__array") ?: return emptyList()
+        return (0 until crew.length()).map { crew.getJSONObject(it) }
             .filter { it.optString("type").equals("Cast", ignoreCase = true) }
             .sortedBy { it.optInt("order", Int.MAX_VALUE) }
             .take(TOP_CAST_COUNT)
-        if (actors.isEmpty()) return 0.0
-        return actors.sumOf { actor ->
-            val personId = actor.optInt("person_id")
-            val personKey = "p:$personId"
-            val percentile = readCache(personKey)?.toDoubleOrNull() ?: get("/person/$personId/")
-                .optDouble("relevance_percentile", 0.0)
-                .also { writeCache(personKey, it.toString()) }
-            MovieRanking.percentileScore(percentile)
-        } / actors.size
+            .map { actor ->
+                val personId = actor.optInt("person_id")
+                val personKey = "p:$personId"
+                val percentile = readCache(personKey)?.toDoubleOrNull() ?: get("/person/$personId/")
+                    .optDouble("relevance_percentile", 0.0)
+                    .also { writeCache(personKey, it.toString()) }
+                MovieInfo.Actor(actor.optString("full_name"), percentile)
+            }
     }
 
     private fun toInfo(stored: JSONObject): MovieInfo {
         val relevance = stored.optDouble("relevance_percentile", 0.0)
+        val popularity = stored.optDouble("popularity_percentile", 0.0)
+        val cast = stored.optJSONArray("cast")
         return MovieInfo(
-            popularity = MovieRanking.percentileScore(stored.optDouble("popularity_percentile", 0.0)),
+            popularity = MovieRanking.percentileScore(popularity),
             reach = MovieRanking.percentileScore(relevance),
             // Watchmode has no vote count; well-known movies' scores are trusted more
             ratingConfidence = relevance / 100.0,
             castPopularity = if (stored.has("cast_score")) stored.getDouble("cast_score") else null,
             releaseDate = stored.optString("release_date"),
             imdbId = stored.optString("imdb_id"),
-            originalLanguage = stored.optString("original_language")
+            originalLanguage = stored.optString("original_language"),
+            popularityPercentile = popularity,
+            relevancePercentile = relevance,
+            actors = if (cast == null) emptyList() else (0 until cast.length()).map {
+                val actor = cast.getJSONObject(it)
+                MovieInfo.Actor(actor.optString("name"), actor.optDouble("percentile", 0.0))
+            }
         )
     }
 
@@ -211,7 +221,7 @@ object WatchmodeClient {
                 if (quota != null && used != null) keyQuota[key] = quota to used
                 when (response.code) {
                     200 -> return if (body.trimStart().startsWith("[")) {
-                        JSONObject().put("__array", org.json.JSONArray(body))
+                        JSONObject().put("__array", JSONArray(body))
                     } else {
                         JSONObject(body)
                     }

@@ -68,6 +68,7 @@ import com.pira.ccloud.data.model.FavoriteItem
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.model.Source
 import com.pira.ccloud.utils.DownloadUtils
+import com.pira.ccloud.components.MovieScoresSection
 import com.pira.ccloud.utils.StorageUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -457,6 +458,9 @@ fun MovieDetailsContent(
                     .fillMaxWidth()
             )
         }
+        
+        // Awards and the ranking criteria
+        MovieScoresSection(movie = movie)
         
         // Sources/Quality options
         if (movie.sources.isNotEmpty()) {

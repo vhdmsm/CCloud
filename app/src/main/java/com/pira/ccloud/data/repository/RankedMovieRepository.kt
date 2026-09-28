@@ -219,15 +219,31 @@ object MovieRanking {
      * 0..1 mix of everything: rating (35%), how new the movie is (25%), cast (15%), awards (15%) and
      * popularity (10%). Missing parts count as zero.
      */
-    fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double {
+    fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
+        bestOverallParts(facts, currentYear).total
+
+    // Each part already weighted, so they add up to the Best Overall score
+    data class BestOverallParts(
+        val rating: Double,
+        val recency: Double,
+        val actors: Double,
+        val awards: Double,
+        val popularity: Double
+    ) {
+        val total: Double get() = rating + recency + actors + awards + popularity
+    }
+
+    fun bestOverallParts(facts: RankedMovieRepository.MovieFacts, currentYear: Int): BestOverallParts {
         val info = facts.info
         // 5.0 -> 0, 9.0 -> 1
         val rating = ((weightedRating(facts.movie.imdb, info?.ratingConfidence ?: 0.0) - 5.0) / 4.0).coerceIn(0.0, 1.0)
-        return 0.35 * rating +
-            0.25 * recency(facts.movie.year, currentYear) +
-            0.15 * (info?.castPopularity ?: 0.0) +
-            0.15 * (facts.awards?.let { awardsScore(it) } ?: 0.0) +
-            0.10 * (info?.popularity ?: 0.0)
+        return BestOverallParts(
+            rating = 0.35 * rating,
+            recency = 0.25 * recency(facts.movie.year, currentYear),
+            actors = 0.15 * (info?.castPopularity ?: 0.0),
+            awards = 0.15 * (facts.awards?.let { awardsScore(it) } ?: 0.0),
+            popularity = 0.10 * (info?.popularity ?: 0.0)
+        )
     }
 
     // "2024-03-01" -> 20240301; the year alone when the date is unknown

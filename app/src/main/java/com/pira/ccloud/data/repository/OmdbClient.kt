@@ -39,7 +39,9 @@ object OmdbClient {
         val oscarNominations: Int,
         // All wins and nominations, Oscars included
         val wins: Int,
-        val nominations: Int
+        val nominations: Int,
+        // OMDb's own summary, e.g. "Won 3 Oscars. 94 wins & 172 nominations total"; empty when not from OMDb
+        val summary: String = ""
     )
 
     private var prefs: SharedPreferences? = null
@@ -112,7 +114,8 @@ object OmdbClient {
             oscarWins = oscarWins,
             oscarNominations = oscarNominations,
             wins = maxOf(count("(\\d+) wins?\\b"), oscarWins),
-            nominations = maxOf(count("(\\d+) nominations?\\b"), oscarNominations)
+            nominations = maxOf(count("(\\d+) nominations?\\b"), oscarNominations),
+            summary = text.takeIf { it != "N/A" }.orEmpty()
         )
     }
 
