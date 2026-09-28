@@ -13,6 +13,7 @@ import com.pira.ccloud.data.repository.MovieRepository
 import com.pira.ccloud.data.repository.OmdbClient
 import com.pira.ccloud.data.repository.RankedMovieRepository
 import com.pira.ccloud.data.repository.TmdbClient
+import com.pira.ccloud.data.repository.WatchmodeClient
 import com.pira.ccloud.utils.LanguageUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -50,13 +51,18 @@ class MoviesViewModel : ViewModel() {
     var selectedFilterType by mutableStateOf(FilterType.DEFAULT)
         private set
     
-    // Shown above the list when a ranked sort is missing TMDB or OMDb data
+    // Shown above the list when a ranked sort is missing movie or award data
     var rankingNotice by mutableStateOf<String?>(null)
         private set
     
-    // Sorts whose API key isn't in the build are left out
+    // Credit for the data source (Watchmode) when its data is used
+    var rankingAttribution by mutableStateOf<String?>(null)
+        private set
+    
+    // Sorts whose data source isn't set up in the build are left out
     val filterTypes: List<FilterType> = FilterType.entries.filter {
-        (!it.needsTmdb || TmdbClient.isConfigured) && (!it.needsOmdb || OmdbClient.isConfigured)
+        (!it.needsMovieData || TmdbClient.isConfigured || WatchmodeClient.isConfigured) &&
+            (!it.needsOmdb || OmdbClient.isConfigured)
     }
     
     private var loadJob: Job? = null
@@ -107,12 +113,14 @@ class MoviesViewModel : ViewModel() {
                     val shownIds = if (page == 0) emptySet() else movies.map { it.id }.toSet()
                     val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, shownIds)
                     rankingNotice = ranked.notice
+                    rankingAttribution = ranked.attribution
                     lastPage = ranked.lastPage
                     hasMore = ranked.hasMore
                     ranked.movies
                 } else {
                     val result = repository.getMovies(page, selectedGenreId, selectedFilterType)
                     rankingNotice = null
+                    rankingAttribution = null
                     lastPage = page
                     hasMore = result.isNotEmpty()
                     result

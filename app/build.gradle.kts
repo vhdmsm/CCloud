@@ -46,6 +46,8 @@ android {
         buildConfigField("String", "OMDB_API_KEY", "\"${apiKey("OMDB_API_KEY")}\"")
         buildConfigField("String", "OMDB_API_KEY2", "\"${apiKey("OMDB_API_KEY2")}\"")
         buildConfigField("String", "OMDB_API_KEY3", "\"${apiKey("OMDB_API_KEY3")}\"")
+        // Watchmode API key: movie data when TMDB can't be reached (e.g. from Iran without the relay)
+        buildConfigField("String", "WATCHMODE_API_KEY", "\"${secretsProperties.getProperty("WATCHMODE_API_KEY", "")}\"")
         
         // Add memory management options
         multiDexEnabled = true

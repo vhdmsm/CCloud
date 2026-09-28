@@ -19,9 +19,9 @@ import java.util.concurrent.TimeUnit
 object TmdbClient {
     private const val BASE_URL = "https://api.themoviedb.org/3"
     private const val TOP_CAST_COUNT = 5
-    // After a network error TMDB is skipped for a while, so a blocked connection doesn't
-    // make every movie wait for its own timeout
-    private const val OFFLINE_BACKOFF_MS = 60_000L
+    // After a network error TMDB is skipped for a while (Watchmode is used meanwhile, if set up),
+    // so a blocked connection doesn't make every movie wait for its own timeout
+    private const val OFFLINE_BACKOFF_MS = 10 * 60_000L
 
     val isConfigured: Boolean get() = ApiRelay.isEnabled || BuildConfig.TMDB_API_KEY.isNotEmpty()
 
@@ -57,6 +57,20 @@ object TmdbClient {
     private var offlineUntil = 0L
 
     val isReachable: Boolean get() = System.currentTimeMillis() >= offlineUntil
+
+    val isAvailable: Boolean get() = isConfigured && isReachable
+
+    fun TmdbMovie.toInfo() = MovieInfo(
+        popularity = MovieRanking.logScale(popularity, 300.0),
+        reach = MovieRanking.logScale(voteCount.toDouble(), 30_000.0),
+        ratingConfidence = voteCount / (voteCount + MovieRanking.PRIOR_VOTES),
+        castPopularity = MovieRanking.logScale(castPopularity, 60.0),
+        releaseDate = releaseDate,
+        imdbId = imdbId,
+        originalLanguage = originalLanguage,
+        originCountries = originCountries,
+        source = MovieInfo.Source.TMDB
+    )
 
     /** TMDB data for the movie with this title and year, or null when TMDB can't find it or can't be reached. */
     suspend fun movie(title: String, year: Int): TmdbMovie? = withContext(Dispatchers.IO) {

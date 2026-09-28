@@ -7,8 +7,10 @@ package com.pira.ccloud.data.model
 enum class FilterType(
     // Ranked in the app instead of by the server
     val isRanked: Boolean = false,
-    // Needs popularity, votes, cast or release dates from TMDB
-    val needsTmdb: Boolean = false,
+    // Needs popularity, votes, actors or release dates from TMDB (or Watchmode when TMDB can't be reached)
+    val needsMovieData: Boolean = false,
+    // Ranks by the lead actors, which costs Watchmode extra credits
+    val needsCast: Boolean = false,
     // Needs award data from OMDb (limited daily requests), so it only reads the newest-first list
     val needsOmdb: Boolean = false
 ) {
@@ -17,14 +19,14 @@ enum class FilterType(
     BY_IMDB,
 
     // One field each
-    MOST_POPULAR(isRanked = true, needsTmdb = true),
-    TOP_RATED(isRanked = true, needsTmdb = true),
-    STAR_CAST(isRanked = true, needsTmdb = true),
-    MOST_AWARDED(isRanked = true, needsTmdb = true, needsOmdb = true),
-    NEWEST(isRanked = true, needsTmdb = true),
+    MOST_POPULAR(isRanked = true, needsMovieData = true),
+    TOP_RATED(isRanked = true, needsMovieData = true),
+    STAR_CAST(isRanked = true, needsMovieData = true, needsCast = true),
+    MOST_AWARDED(isRanked = true, needsMovieData = true, needsOmdb = true),
+    NEWEST(isRanked = true, needsMovieData = true),
 
     // Combinations
     TOP_PICKS(isRanked = true),
-    POPULAR_CAST(isRanked = true, needsTmdb = true),
-    BEST_OVERALL(isRanked = true, needsTmdb = true, needsOmdb = true)
+    POPULAR_CAST(isRanked = true, needsMovieData = true),
+    BEST_OVERALL(isRanked = true, needsMovieData = true, needsOmdb = true)
 }

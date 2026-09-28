@@ -41,6 +41,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import com.pira.ccloud.data.repository.OmdbClient
+import com.pira.ccloud.data.repository.WatchmodeClient
 import com.pira.ccloud.navigation.AppNavigation
 import com.pira.ccloud.navigation.AppScreens
 import com.pira.ccloud.navigation.BottomNavigationBar
@@ -55,8 +56,9 @@ import com.pira.ccloud.utils.DeviceUtils
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // On-device cache of OMDb award answers, to save its daily requests
+        // On-device caches of OMDb and Watchmode answers, to save their limited requests
         OmdbClient.init(this)
+        WatchmodeClient.init(this)
         // Set default orientation to portrait for mobile/tablet
         // For TV, we don't set orientation as it's typically fixed
         if (!DeviceUtils.isTv(this)) {

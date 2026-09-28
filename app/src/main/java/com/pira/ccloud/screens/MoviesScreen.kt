@@ -110,6 +110,15 @@ fun MoviesScreen(
             )
         }
         
+        viewModel.rankingAttribution?.let { attribution ->
+            Text(
+                text = attribution,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
+        }
+        
         when {
             isLoading && movies.isEmpty() -> {
                 // Show modern loading animation when initial movies are loading

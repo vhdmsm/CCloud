@@ -2,6 +2,7 @@ package com.pira.ccloud.data.repository
 
 import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Movie
+import com.pira.ccloud.data.repository.TmdbClient.toInfo
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -12,7 +13,7 @@ import kotlin.math.ln
 
 /**
  * Movies for the sorts the server can't do (see [FilterType.isRanked]). Each load reads the
- * server's lists, keeps the movies not shown yet, adds TMDB and OMDb data where the sort needs
+ * server's lists, keeps the movies not shown yet, adds TMDB (or Watchmode) and OMDb data where the sort needs
  * it and ranks them in the app, so every loaded batch is ordered best first.
  */
 class RankedMovieRepository(
@@ -23,14 +24,16 @@ class RankedMovieRepository(
         // Last server page read; the next load starts after it
         val lastPage: Int,
         val hasMore: Boolean,
-        // Shown above the list when TMDB or OMDb data is missing
-        val notice: String?
+        // Shown above the list when movie or award data is missing
+        val notice: String?,
+        // Credit for the data source, shown under the sort when Watchmode data is used
+        val attribution: String?
     )
 
-    // A movie with the data the sorts rank by; tmdb and awards are null when unknown or not needed
+    // A movie with the data the sorts rank by; info and awards are null when unknown or not needed
     data class MovieFacts(
         val movie: Movie,
-        val tmdb: TmdbClient.TmdbMovie?,
+        val info: MovieInfo?,
         val awards: OmdbClient.Awards?
     )
 
@@ -42,8 +45,7 @@ class RankedMovieRepository(
     ): RankedPage {
         val seen = shownIds.toMutableSet()
         val batch = mutableListOf<MovieFacts>()
-        val tmdbPermits = Semaphore(TMDB_PARALLEL_REQUESTS)
-        val omdbPermits = Semaphore(OMDB_PARALLEL_REQUESTS)
+        val permits = Permits()
         val maxPages = if (filterType.needsOmdb) MAX_PAGES_PER_LOAD_OMDB else MAX_PAGES_PER_LOAD
         var currentPage = page
         var hasMore = true
@@ -52,26 +54,31 @@ class RankedMovieRepository(
             val candidates = readServerPage(currentPage, genreId, filterType)
             hasMore = candidates.isNotEmpty()
             val fresh = candidates.filter { seen.add(it.id) && MovieRanking.isCandidate(it, filterType) }
-            batch += addFacts(fresh, filterType, tmdbPermits, omdbPermits)
+            batch += addFacts(fresh, filterType, permits)
             if (batch.size >= MIN_BATCH_SIZE || !hasMore || currentPage - page + 1 >= maxPages) break
             currentPage++
         }
 
-        // Without TMDB, Newest still has the year; the other sorts fall back to IMDB order
-        val tmdbMissing = filterType.needsTmdb && !TmdbClient.isReachable && filterType != FilterType.NEWEST
+        // Without movie data, Newest still has the year; the other sorts fall back to IMDB order
+        val dataMissing = filterType.needsMovieData && filterType != FilterType.NEWEST &&
+            batch.isNotEmpty() && batch.none { it.info != null }
+        val castMissing = filterType.needsCast && !dataMissing &&
+            batch.isNotEmpty() && batch.none { it.info?.castPopularity != null }
         val omdbMissing = filterType.needsOmdb && !OmdbClient.isAvailable
         val year = Calendar.getInstance().get(Calendar.YEAR)
         val ranked = batch.sortedWith(
             compareByDescending<MovieFacts> {
-                if (tmdbMissing) it.movie.imdb else MovieRanking.score(filterType, it, year)
+                if (dataMissing || castMissing) it.movie.imdb else MovieRanking.score(filterType, it, year)
             }.thenByDescending { it.movie.imdb }
         )
         val notice = when {
-            tmdbMissing -> "Couldn't reach TMDB, showing movies by IMDB score"
+            dataMissing -> "Movie data (TMDB or Watchmode) isn't available right now, showing movies by IMDB score"
+            castMissing -> "Actor data isn't available right now, showing movies by IMDB score"
             omdbMissing -> "Award data from OMDb isn't available right now (daily limit or no connection)"
             else -> null
         }
-        return RankedPage(ranked.map { it.movie }, currentPage, hasMore, notice)
+        val attribution = if (batch.any { it.info?.source == MovieInfo.Source.WATCHMODE }) "Movie data from Watchmode" else null
+        return RankedPage(ranked.map { it.movie }, currentPage, hasMore, notice, attribution)
     }
 
     // Award and date sorts read only the newest-first list, so OMDb's daily requests go to recent movies
@@ -86,37 +93,49 @@ class RankedMovieRepository(
             }
         }
 
-    // Drops movies TMDB says are Indian or Turkish before any OMDb request is spent on them
+    // Parallel requests allowed to each service
+    private class Permits {
+        val tmdb = Semaphore(6)
+        val watchmode = Semaphore(3)
+        val omdb = Semaphore(4)
+    }
+
+    // Drops movies the data says are Indian or Turkish before any OMDb request is spent on them
     private suspend fun addFacts(
         movies: List<Movie>,
         filterType: FilterType,
-        tmdbPermits: Semaphore,
-        omdbPermits: Semaphore
+        permits: Permits
     ): List<MovieFacts> = coroutineScope {
         movies.map { movie ->
             async {
-                val tmdb = if (filterType.needsTmdb) {
-                    tmdbPermits.withPermit { TmdbClient.movie(movie.title, movie.year) }
+                val info = if (filterType.needsMovieData) movieInfo(movie, filterType, permits) else null
+                if (info != null && MovieRanking.isExcludedOrigin(info)) return@async null
+                val awards = if (filterType.needsOmdb && info != null && info.imdbId.isNotEmpty()) {
+                    permits.omdb.withPermit { OmdbClient.awards(info.imdbId) }
                 } else {
                     null
                 }
-                if (tmdb != null && MovieRanking.isExcludedOrigin(tmdb)) return@async null
-                val awards = if (filterType.needsOmdb && tmdb != null && tmdb.imdbId.isNotEmpty()) {
-                    omdbPermits.withPermit { OmdbClient.awards(tmdb.imdbId) }
-                } else {
-                    null
-                }
-                MovieFacts(movie, tmdb, awards)
+                MovieFacts(movie, info, awards)
             }
         }.awaitAll().filterNotNull()
+    }
+
+    // TMDB first; Watchmode only when TMDB isn't set up or can't be reached (a movie TMDB doesn't
+    // know isn't looked up again, to save Watchmode's small monthly quota)
+    private suspend fun movieInfo(movie: Movie, filterType: FilterType, permits: Permits): MovieInfo? {
+        if (TmdbClient.isAvailable) {
+            val tmdb = permits.tmdb.withPermit { TmdbClient.movie(movie.title, movie.year) }
+            if (tmdb != null) return tmdb.toInfo()
+            if (TmdbClient.isAvailable) return null
+        }
+        if (!WatchmodeClient.isAvailable) return null
+        return permits.watchmode.withPermit { WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast) }
     }
 
     private companion object {
         const val MIN_BATCH_SIZE = 12
         const val MAX_PAGES_PER_LOAD = 3
         const val MAX_PAGES_PER_LOAD_OMDB = 2
-        const val TMDB_PARALLEL_REQUESTS = 6
-        const val OMDB_PARALLEL_REQUESTS = 4
     }
 }
 
@@ -128,7 +147,7 @@ object MovieRanking {
     private const val RECENCY_BONUS = 1.0
     // Top Rated pulls scores with few votes towards this average, so a 9.0 from 20 votes can't win
     private const val PRIOR_RATING = 6.0
-    private const val PRIOR_VOTES = 300
+    const val PRIOR_VOTES = 300.0
 
     // Indian and Turkish movies are left out of the ranked sorts
     private val excludedCountryNames = setOf("india", "هند", "هندوستان", "turkey", "türkiye", "turkiye", "ترکیه")
@@ -148,21 +167,21 @@ object MovieRanking {
 
     fun isExcludedLanguage(language: String): Boolean = language.lowercase() in excludedLanguages
 
-    fun isExcludedOrigin(tmdb: TmdbClient.TmdbMovie): Boolean =
-        isExcludedLanguage(tmdb.originalLanguage) || tmdb.originCountries.any { it.uppercase() in excludedCountryCodes }
+    fun isExcludedOrigin(info: MovieInfo): Boolean =
+        isExcludedLanguage(info.originalLanguage) || info.originCountries.any { it.uppercase() in excludedCountryCodes }
 
     /** Higher is better. Missing data scores lowest, so those movies end up at the bottom of the batch. */
     fun score(filterType: FilterType, facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double {
         val movie = facts.movie
-        val tmdb = facts.tmdb
+        val info = facts.info
         return when (filterType) {
-            FilterType.MOST_POPULAR -> tmdb?.popularity ?: -1.0
-            FilterType.TOP_RATED -> weightedRating(movie.imdb, tmdb?.voteCount ?: 0)
-            FilterType.STAR_CAST -> tmdb?.castPopularity ?: -1.0
+            FilterType.MOST_POPULAR -> info?.popularity ?: -1.0
+            FilterType.TOP_RATED -> weightedRating(movie.imdb, info?.ratingConfidence ?: 0.0)
+            FilterType.STAR_CAST -> info?.castPopularity ?: -1.0
             FilterType.MOST_AWARDED -> facts.awards?.let { awardsScore(it) } ?: -1.0
-            FilterType.NEWEST -> releaseDateValue(tmdb?.releaseDate.orEmpty(), movie.year)
+            FilterType.NEWEST -> releaseDateValue(info?.releaseDate.orEmpty(), movie.year)
             FilterType.TOP_PICKS -> topPicksScore(movie.imdb, movie.year, currentYear)
-            FilterType.POPULAR_CAST -> tmdb?.let { popularityScore(it) } ?: -1.0
+            FilterType.POPULAR_CAST -> info?.let { popularityScore(it) } ?: -1.0
             FilterType.BEST_OVERALL -> bestOverallScore(facts, currentYear)
             FilterType.DEFAULT, FilterType.BY_YEAR, FilterType.BY_IMDB -> 0.0
         }
@@ -174,21 +193,22 @@ object MovieRanking {
      */
     fun topPicksScore(imdb: Double, year: Int, currentYear: Int): Double = imdb + RECENCY_BONUS * recency(year, currentYear)
 
-    /** IMDB score, trusted more the more people voted on TMDB (a Bayesian average). */
-    fun weightedRating(imdb: Double, voteCount: Int): Double {
+    /**
+     * IMDB score pulled towards an average when few people rated it (a Bayesian average; with TMDB
+     * the confidence is votes / (votes + 300)).
+     */
+    fun weightedRating(imdb: Double, confidence: Double): Double {
         if (imdb <= 0.0) return -1.0
-        val votes = voteCount.coerceAtLeast(0).toDouble()
-        return (votes * imdb + PRIOR_VOTES * PRIOR_RATING) / (votes + PRIOR_VOTES)
+        val weight = confidence.coerceIn(0.0, 1.0)
+        return weight * imdb + (1 - weight) * PRIOR_RATING
     }
 
     /**
-     * 0..1 score from TMDB data, each part on a log scale so a few blockbusters don't dwarf the rest:
-     * current popularity (40%), all-time vote count (35%) and how famous the lead actors are (25%).
+     * 0..1: current popularity (40%), how widely known the movie is (35%) and how famous the lead
+     * actors are (25%, when known).
      */
-    fun popularityScore(tmdb: TmdbClient.TmdbMovie): Double =
-        0.40 * logScale(tmdb.popularity, 300.0) +
-            0.35 * logScale(tmdb.voteCount.toDouble(), 30_000.0) +
-            0.25 * logScale(tmdb.castPopularity, 60.0)
+    fun popularityScore(info: MovieInfo): Double =
+        0.40 * info.popularity + 0.35 * info.reach + 0.25 * (info.castPopularity ?: 0.0)
 
     /** 0..1: an Oscar win counts like 10 other wins, an Oscar nomination like 3, other nominations a quarter. */
     fun awardsScore(awards: OmdbClient.Awards): Double {
@@ -203,17 +223,17 @@ object MovieRanking {
      * popularity (10%). Missing parts count as zero.
      */
     fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double {
-        val tmdb = facts.tmdb
+        val info = facts.info
         // 5.0 -> 0, 9.0 -> 1
-        val rating = ((weightedRating(facts.movie.imdb, tmdb?.voteCount ?: 0) - 5.0) / 4.0).coerceIn(0.0, 1.0)
+        val rating = ((weightedRating(facts.movie.imdb, info?.ratingConfidence ?: 0.0) - 5.0) / 4.0).coerceIn(0.0, 1.0)
         return 0.35 * rating +
             0.25 * recency(facts.movie.year, currentYear) +
-            0.15 * logScale(tmdb?.castPopularity ?: 0.0, 60.0) +
+            0.15 * (info?.castPopularity ?: 0.0) +
             0.15 * (facts.awards?.let { awardsScore(it) } ?: 0.0) +
-            0.10 * logScale(tmdb?.popularity ?: 0.0, 300.0)
+            0.10 * (info?.popularity ?: 0.0)
     }
 
-    // "2024-03-01" -> 20240301; the year alone when TMDB has no date
+    // "2024-03-01" -> 20240301; the year alone when the date is unknown
     fun releaseDateValue(releaseDate: String, year: Int): Double {
         val parts = releaseDate.split('-').mapNotNull { it.toIntOrNull() }
         return if (parts.size == 3) {
@@ -228,6 +248,6 @@ object MovieRanking {
         ((year - (currentYear - RECENCY_YEARS)).toDouble() / RECENCY_YEARS).coerceIn(0.0, 1.0)
 
     // 0 at 0, 1 at max and above
-    private fun logScale(value: Double, max: Double): Double =
+    fun logScale(value: Double, max: Double): Double =
         (ln(1 + value.coerceAtLeast(0.0)) / ln(1 + max)).coerceAtMost(1.0)
 }

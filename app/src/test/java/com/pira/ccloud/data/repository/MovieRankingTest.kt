@@ -4,6 +4,7 @@ import com.pira.ccloud.data.model.Country
 import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.repository.RankedMovieRepository.MovieFacts
+import com.pira.ccloud.data.repository.TmdbClient.toInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -25,7 +26,14 @@ class MovieRankingTest {
         releaseDate: String = "",
         language: String = "en",
         countries: List<String> = listOf("US")
-    ) = TmdbClient.TmdbMovie(popularity, votes, 7.0, cast, releaseDate, "tt0000001", language, countries)
+    ) = TmdbClient.TmdbMovie(popularity, votes, 7.0, cast, releaseDate, "tt0000001", language, countries).toInfo()
+
+    // Watchmode gives percentiles instead of counts, and no actors unless asked
+    private fun watchmode(popularityPercentile: Double, relevancePercentile: Double, cast: Double? = null) = MovieInfo(
+        popularity = popularityPercentile / 100, reach = relevancePercentile / 100, ratingConfidence = relevancePercentile / 100,
+        castPopularity = cast, releaseDate = "", imdbId = "", originalLanguage = "en", originCountries = emptyList(),
+        source = MovieInfo.Source.WATCHMODE
+    )
 
     private fun ranked(filterType: FilterType, vararg facts: MovieFacts): List<Int> =
         facts.sortedByDescending { MovieRanking.score(filterType, it, currentYear) }.map { it.movie.id }
@@ -103,5 +111,19 @@ class MovieRankingTest {
         assertTrue(MovieRanking.isExcludedOrigin(tmdb(language = "hi", countries = listOf("IN"))))
         assertTrue(MovieRanking.isExcludedOrigin(tmdb(language = "en", countries = listOf("TR"))))
         assertFalse(MovieRanking.isExcludedOrigin(tmdb()))
+        assertTrue(MovieRanking.isExcludedOrigin(watchmode(90.0, 90.0).copy(originalLanguage = "tr")))
+    }
+
+    @Test
+    fun watchmodeDataRanksLikeTmdbData() {
+        val wellKnown = MovieFacts(movie(1, 8.3, 2023), watchmode(popularityPercentile = 95.0, relevancePercentile = 98.0), null)
+        val obscure = MovieFacts(movie(2, 9.1, 2025), watchmode(popularityPercentile = 20.0, relevancePercentile = 15.0), null)
+        assertEquals(listOf(1, 2), ranked(FilterType.MOST_POPULAR, wellKnown, obscure))
+        // The obscure 9.1 is pulled towards the average, like a TMDB score with few votes
+        assertEquals(listOf(1, 2), ranked(FilterType.TOP_RATED, wellKnown, obscure))
+        // Without actor data Famous Actors can't rank; with it, it can
+        assertEquals(-1.0, MovieRanking.score(FilterType.STAR_CAST, wellKnown, currentYear), 0.0)
+        val starCast = MovieFacts(movie(3, 7.0, 2024), watchmode(50.0, 50.0, cast = 0.9), null)
+        assertTrue(MovieRanking.score(FilterType.STAR_CAST, starCast, currentYear) > 0.8)
     }
 }
