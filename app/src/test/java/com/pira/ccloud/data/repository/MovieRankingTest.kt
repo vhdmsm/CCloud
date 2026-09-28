@@ -267,10 +267,10 @@ class MovieRankingTest {
     }
 
     @Test
-    fun leavesOutMoviesRatedBelowFiveAndAHalf() {
-        assertFalse(MovieRanking.isCandidate(movie(1, 5.4, 2026), FilterType.BEST_OVERALL))
+    fun leavesOutMoviesRatedBelowSix() {
+        assertFalse(MovieRanking.isCandidate(movie(1, 5.9, 2026), FilterType.BEST_OVERALL))
         assertFalse(MovieRanking.isCandidate(movie(1, 3.0, 2026), FilterType.NEWEST))
-        assertTrue(MovieRanking.isCandidate(movie(1, 5.5, 2026), FilterType.BEST_OVERALL))
+        assertTrue(MovieRanking.isCandidate(movie(1, 6.0, 2026), FilterType.BEST_OVERALL))
         // Not rated yet: kept
         assertTrue(MovieRanking.isCandidate(movie(1, 0.0, 2026), FilterType.BEST_OVERALL))
         // The server's own sorts show everything

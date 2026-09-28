@@ -334,7 +334,7 @@ object MovieRanking {
     // Top Picks only shows movies rated at least this on IMDB
     const val TOP_PICKS_MIN_IMDB = 6.5
     // The ranked sorts leave out movies rated below this on IMDB
-    const val MIN_IMDB = 5.5
+    const val MIN_IMDB = 6.0
     // Movies from the last RECENCY_YEARS get up to RECENCY_BONUS extra points, newest the most
     private const val RECENCY_YEARS = 25
     private const val RECENCY_BONUS = 1.0
