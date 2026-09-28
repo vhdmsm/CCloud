@@ -43,6 +43,7 @@ android {
         // monthly quota; empty hides the sorts that need them
         buildConfigField("String", "WATCHMODE_API_KEY", "\"${apiKey("WATCHMODE_API_KEY")}\"")
         buildConfigField("String", "WATCHMODE_API_KEY2", "\"${apiKey("WATCHMODE_API_KEY2")}\"")
+        buildConfigField("String", "WATCHMODE_API_KEY3", "\"${apiKey("WATCHMODE_API_KEY3")}\"")
         
         // Add memory management options
         multiDexEnabled = true

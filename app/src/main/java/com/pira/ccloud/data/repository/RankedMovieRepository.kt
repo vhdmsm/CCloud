@@ -76,15 +76,18 @@ class RankedMovieRepository(
             dataMissing -> "Movie data from Watchmode isn't available right now (monthly limit or no connection), showing movies by IMDB score"
             castMissing -> "Actor data isn't available right now, showing movies by IMDB score"
             omdbMissing -> "Award data from OMDb isn't available right now (daily limit or no connection)"
+            filterType.needsMovieData && WatchmodeClient.isSavingCredits ->
+                "Watchmode credits are low this month: only this year's movies get new data"
             else -> null
         }
         val attribution = if (batch.any { it.info != null }) "Movie data from Watchmode" else null
         return RankedPage(ranked.map { it.movie }, currentPage, hasMore, notice, attribution)
     }
 
-    // Award and date sorts read only the newest-first list, so OMDb's daily requests go to recent movies
+    // Sorts that ask Watchmode or OMDb read only the newest-first list: their limited requests go to
+    // this year's movies first, then last year's and so on as the list is scrolled (and cached)
     private suspend fun readServerPage(page: Int, genreId: Int, filterType: FilterType): List<Movie> =
-        if (filterType.needsOmdb || filterType == FilterType.NEWEST) {
+        if (filterType.needsMovieData || filterType.needsOmdb || filterType == FilterType.NEWEST) {
             movieRepository.getMovies(page, genreId, FilterType.BY_YEAR)
         } else {
             coroutineScope {

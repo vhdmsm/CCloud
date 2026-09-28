@@ -6,6 +6,7 @@ import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.repository.RankedMovieRepository.MovieFacts
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -140,5 +141,23 @@ class MovieRankingTest {
         assertEquals(2, WatchmodeClient.pickMovie(listOf(result(1, "tv_series", 2021), result(2, "movie", 2021)), 2021))
         assertEquals(3, WatchmodeClient.pickMovie(listOf(result(4, "tv_movie", 2021), result(3, "movie", 2021)), 2021))
         assertEquals(null, WatchmodeClient.pickMovie(listOf(result(1, "tv_series", 2021)), 2021))
+    }
+
+    @Test
+    fun savesCreditsForThisYearsMovies() {
+        // Plenty left (or not known yet): every year gets new lookups
+        assertTrue(WatchmodeClient.allowsNewLookup(2019, 2026, 0.6))
+        assertTrue(WatchmodeClient.allowsNewLookup(2019, 2026, null))
+        // Under 20% left: only this year's movies
+        assertTrue(WatchmodeClient.allowsNewLookup(2026, 2026, 0.1))
+        assertFalse(WatchmodeClient.allowsNewLookup(2025, 2026, 0.1))
+    }
+
+    @Test
+    fun keysThatHaveNotAnsweredCountAsUnused() {
+        // Key 1 used up, keys 2 and 3 not asked yet: two thirds left, not "credits low"
+        assertEquals(2.0 / 3, WatchmodeClient.remainingShare(listOf(2500L to 2500L, null, null))!!, 0.001)
+        assertEquals(0.1, WatchmodeClient.remainingShare(listOf(2500L to 2250L))!!, 0.001)
+        assertNull(WatchmodeClient.remainingShare(listOf(null, null)))
     }
 }

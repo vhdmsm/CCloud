@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
+import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -28,9 +29,15 @@ object WatchmodeClient {
     private const val BLOCKED_BACKOFF_MS = 6L * 60 * 60 * 1000
     // Too many requests this minute, or no connection
     private const val SHORT_BACKOFF_MS = 60_000L
+    // Below this share of the month's credits left, only this year's movies get new lookups
+    private const val RESERVE_SHARE = 0.2
 
     private val keys: List<String>
-        get() = listOf(BuildConfig.WATCHMODE_API_KEY, BuildConfig.WATCHMODE_API_KEY2).filter { it.isNotEmpty() }
+        get() = listOf(BuildConfig.WATCHMODE_API_KEY, BuildConfig.WATCHMODE_API_KEY2, BuildConfig.WATCHMODE_API_KEY3)
+            .filter { it.isNotEmpty() }
+
+    // Monthly quota and credits used per key, from the last response's headers
+    private val keyQuota = ConcurrentHashMap<String, Pair<Long, Long>>()
 
     val isConfigured: Boolean get() = keys.isNotEmpty()
 
@@ -54,6 +61,27 @@ object WatchmodeClient {
             return now >= offlineUntil && keys.any { (keyBlockedUntil[it] ?: 0L) <= now }
         }
 
+    /** Share (0..1) of this month's credits left over all keys, or null before any key has answered. */
+    val remainingShare: Double? get() = remainingShare(keys.map { keyQuota[it] })
+
+    /** [quotas] are (monthly quota, used) per key; a key that hasn't answered yet counts as unused. */
+    fun remainingShare(quotas: List<Pair<Long, Long>?>): Double? {
+        val known = quotas.filterNotNull().filter { it.first > 0 }
+        if (known.isEmpty()) return null
+        val typicalQuota = known.sumOf { it.first } / known.size
+        val unknownKeys = quotas.count { it == null }
+        val total = known.sumOf { it.first } + unknownKeys * typicalQuota
+        val left = known.sumOf { (it.first - it.second).coerceAtLeast(0) } + unknownKeys * typicalQuota
+        return left.toDouble() / total
+    }
+
+    // True when credits are low and only this year's movies get new lookups
+    val isSavingCredits: Boolean get() = (remainingShare ?: 1.0) < RESERVE_SHARE
+
+    /** New lookups (which cost credits) for this year's movies always; for older ones only while credits last. */
+    fun allowsNewLookup(year: Int, currentYear: Int, remainingShare: Double?): Boolean =
+        year >= currentYear || (remainingShare ?: 1.0) >= RESERVE_SHARE
+
     fun init(context: Context) {
         if (prefs == null) prefs = context.applicationContext.getSharedPreferences("watchmode", Context.MODE_PRIVATE)
     }
@@ -67,17 +95,22 @@ object WatchmodeClient {
         val query = title.replace(Regex("\\((19|20)\\d{2}\\)"), " ").replace(Regex("\\s+"), " ").trim()
         if (query.isEmpty()) return@withContext null
         val key = "t:${query.lowercase()}|$year"
+        // Cached answers are free; new lookups for older movies wait while credits are low
+        val mayLookUp = allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare)
 
         try {
             var stored = readCache(key)?.let { JSONObject(it) }
             if (stored == null) {
+                if (!mayLookUp) return@withContext null
                 val id = findMovie(query, year)
                 stored = if (id == null) JSONObject() else details(id)
                 writeCache(key, stored.toString())
             }
             if (!stored.has("id")) return@withContext null
 
-            if (withCast && !stored.has("cast_score") && !MovieRanking.isExcludedLanguage(stored.optString("original_language"))) {
+            if (withCast && mayLookUp && !stored.has("cast_score") &&
+                !MovieRanking.isExcludedLanguage(stored.optString("original_language"))
+            ) {
                 stored.put("cast_score", castScore(stored.getInt("id")))
                 writeCache(key, stored.toString())
             }
@@ -173,6 +206,9 @@ object WatchmodeClient {
                 .build()
             client.newCall(request).execute().use { response ->
                 val body = response.body?.string().orEmpty()
+                val quota = response.header("X-Account-Quota")?.toLongOrNull()
+                val used = response.header("X-Account-Quota-Used")?.toLongOrNull()
+                if (quota != null && used != null) keyQuota[key] = quota to used
                 when (response.code) {
                     200 -> return if (body.trimStart().startsWith("[")) {
                         JSONObject().put("__array", org.json.JSONArray(body))
@@ -183,8 +219,6 @@ object WatchmodeClient {
                     401, 402, 403 -> blockKey(key, BLOCKED_BACKOFF_MS)
                     429 -> {
                         // Monthly quota used up, or just too many requests this minute
-                        val quota = response.header("X-Account-Quota")?.toLongOrNull()
-                        val used = response.header("X-Account-Quota-Used")?.toLongOrNull()
                         blockKey(key, if (quota != null && used != null && used >= quota) BLOCKED_BACKOFF_MS else SHORT_BACKOFF_MS)
                     }
                     else -> throw IllegalStateException("Watchmode error ${response.code}")
