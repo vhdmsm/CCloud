@@ -2,6 +2,7 @@ package com.pira.ccloud.data.repository
 
 import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Movie
+import com.pira.ccloud.utils.LanguageUtils
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -58,12 +59,11 @@ class RankedMovieRepository(
             currentPage++
         }
 
-        // Without movie data, Newest still has the year; the other sorts fall back to IMDB order
-        val dataMissing = filterType.needsMovieData && filterType != FilterType.NEWEST &&
-            batch.isNotEmpty() && batch.none { it.info != null }
+        // Without movie data the sorts fall back to IMDB order
+        val dataMissing = filterType.needsMovieData && batch.isNotEmpty() && batch.none { it.info != null }
         val castMissing = filterType.needsCast && !dataMissing &&
             batch.isNotEmpty() && batch.none { it.info?.castPopularity != null }
-        val omdbMissing = filterType.needsOmdb && !OmdbClient.isAvailable
+        val omdbMissing = filterType.needsOmdb && !OmdbClient.isAvailable && batch.any { it.awards == null }
         val year = Calendar.getInstance().get(Calendar.YEAR)
         val ranked = batch.sortedWith(
             compareByDescending<MovieFacts> {
@@ -98,7 +98,8 @@ class RankedMovieRepository(
         val omdb = Semaphore(4)
     }
 
-    // Drops movies Watchmode says are Indian or Turkish before any OMDb request is spent on them
+    // Awards named in the description need no request; otherwise Watchmode gives the IMDb id for
+    // OMDb. Movies Watchmode says are Indian or Turkish are dropped before any OMDb request.
     private suspend fun addFacts(
         movies: List<Movie>,
         filterType: FilterType,
@@ -106,13 +107,15 @@ class RankedMovieRepository(
     ): List<MovieFacts> = coroutineScope {
         movies.map { movie ->
             async {
-                val info = if (filterType.needsMovieData && WatchmodeClient.isAvailable) {
+                val describedAwards = if (filterType.needsOmdb) MovieDescription.awards(movie) else null
+                val needsInfo = filterType.needsMovieData || (filterType.needsOmdb && describedAwards == null)
+                val info = if (needsInfo && WatchmodeClient.isAvailable) {
                     permits.watchmode.withPermit { WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast) }
                 } else {
                     null
                 }
                 if (info != null && MovieRanking.isExcludedOrigin(info)) return@async null
-                val awards = if (filterType.needsOmdb && info != null && info.imdbId.isNotEmpty()) {
+                val awards = describedAwards ?: if (filterType.needsOmdb && info != null && info.imdbId.isNotEmpty()) {
                     permits.omdb.withPermit { OmdbClient.awards(info.imdbId) }
                 } else {
                     null
@@ -138,14 +141,19 @@ object MovieRanking {
     // Top Rated pulls scores of little-known movies towards this average, so an obscure 9.0 can't win
     private const val PRIOR_RATING = 6.0
 
-    // Indian and Turkish movies are left out of the ranked sorts
+    // Indian and Turkish movies are left out of the ranked sorts, by the server's country or genre
     private val excludedCountryNames = setOf("india", "هند", "هندوستان", "turkey", "türkiye", "turkiye", "ترکیه")
+    private val excludedGenreNames = setOf("هندی", "ترکی")
     // Hindi, Tamil, Telugu, Malayalam, Kannada, Bengali, Marathi, Punjabi, Gujarati, Turkish
     private val excludedLanguages = setOf("hi", "ta", "te", "ml", "kn", "bn", "mr", "pa", "gu", "tr")
 
+    // Checked before any request, so skipped movies cost nothing
     fun isCandidate(movie: Movie, filterType: FilterType): Boolean {
-        if (filterType.isRanked && movie.country.any { it.title.trim().lowercase() in excludedCountryNames }) {
-            return false
+        if (filterType.isRanked) {
+            // Persian titles are the site's own posts (app news, ads), not movies
+            if (!LanguageUtils.shouldDisplayTitle(movie.title)) return false
+            if (movie.country.any { it.title.trim().lowercase() in excludedCountryNames }) return false
+            if (movie.genres.any { it.title.trim() in excludedGenreNames }) return false
         }
         return when (filterType) {
             FilterType.TOP_PICKS -> movie.imdb in TOP_PICKS_MIN_IMDB..10.0 && movie.year > 0
@@ -166,7 +174,7 @@ object MovieRanking {
             FilterType.TOP_RATED -> weightedRating(movie.imdb, info?.ratingConfidence ?: 0.0)
             FilterType.STAR_CAST -> info?.castPopularity ?: -1.0
             FilterType.MOST_AWARDED -> facts.awards?.let { awardsScore(it) } ?: -1.0
-            FilterType.NEWEST -> releaseDateValue(info?.releaseDate.orEmpty(), movie.year)
+            FilterType.NEWEST -> releaseDateValue(MovieDescription.releaseDate(movie) ?: info?.releaseDate.orEmpty(), movie.year)
             FilterType.TOP_PICKS -> topPicksScore(movie.imdb, movie.year, currentYear)
             FilterType.POPULAR_CAST -> info?.let { popularityScore(it) } ?: -1.0
             FilterType.BEST_OVERALL -> bestOverallScore(facts, currentYear)
