@@ -24,11 +24,24 @@ import kotlin.math.abs
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import kotlinx.coroutines.Job
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -37,10 +50,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -68,28 +83,50 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import androidx.media3.common.TrackGroup
 import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.C
+import androidx.media3.common.text.Cue
+import androidx.media3.common.text.CueGroup
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
+import com.pira.ccloud.data.model.SubtitleMode
 import com.pira.ccloud.data.model.SubtitleSettings
+import com.pira.ccloud.player.DualSubtitleRenderersFactory
+import com.pira.ccloud.player.DualSubtitleTrackSelector
+import com.pira.ccloud.player.ExternalSubtitle
+import com.pira.ccloud.player.OnlineSubtitlesState
+import com.pira.ccloud.player.OpenSubtitlesClient
+import com.pira.ccloud.player.SubtitleLanguage
+import com.pira.ccloud.player.SubtitleTracks
 import com.pira.ccloud.data.model.VideoPlayerSettings
 import com.pira.ccloud.data.model.FontSettings
 import com.pira.ccloud.data.model.WatchedEpisode
@@ -99,6 +136,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 // Extension function to set subtitle text size on PlayerView
 fun PlayerView.setSubtitleTextSize(spSize: Float) {
@@ -128,6 +166,16 @@ fun PlayerView.setSubtitleColors(settings: SubtitleSettings, typeface: Typeface?
     // The font may not be applied to all subtitle formats or on all Android versions.
     // This is a known limitation of ExoPlayer's subtitle rendering system.
 }
+
+// Remote control hooks the player screen gives to the activity
+class PlayerRemoteActions(
+    val cycleSubtitleMode: () -> Unit,
+    val openTrackSelection: () -> Unit,
+    // Handles a key before the views; true when consumed
+    val onKey: (android.view.KeyEvent) -> Boolean,
+    // Whether an on-screen control has focus (the arrows then move between controls)
+    val isControlFocused: () -> Boolean
+)
 
 class VideoPlayerActivity : ComponentActivity() {
     companion object {
@@ -163,6 +211,8 @@ class VideoPlayerActivity : ComponentActivity() {
     private var playerInitialized = false
     private var isActivityResumed = false
     private var hasMarkedAsWatched = false
+    // Remote control actions provided by the player screen
+    private var remoteActions: PlayerRemoteActions? = null
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -188,7 +238,8 @@ class VideoPlayerActivity : ComponentActivity() {
                     seriesId = seriesId,
                     seasonId = seasonId,
                     episodeId = episodeId,
-                    onBack = this::finish
+                    onBack = this::finish,
+                    onRemoteActionsReady = { remoteActions = it }
                 ) { player ->
                     exoPlayer = player
                     playerInitialized = true
@@ -231,12 +282,38 @@ class VideoPlayerActivity : ComponentActivity() {
                         finish()
                         return true
                     }
+                    // Subtitle key: Off -> Persian -> English -> Both
+                    android.view.KeyEvent.KEYCODE_CAPTIONS -> {
+                        remoteActions?.cycleSubtitleMode?.invoke()
+                        return true
+                    }
+                    android.view.KeyEvent.KEYCODE_MENU -> {
+                        remoteActions?.openTrackSelection?.invoke()
+                        return true
+                    }
                 }
             }
         } catch (e: Exception) {
             // Ignore key event errors
         }
         return super.onKeyDown(keyCode, event)
+    }
+    
+    // Sees remote keys before the views, so hidden controls can be brought back
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        val actions = remoteActions ?: return super.dispatchKeyEvent(event)
+        if (actions.onKey(event)) return true
+        // With no on-screen control focused, left/right/OK keep seeking and pausing
+        // instead of moving focus between the controls
+        val playbackKeys = setOf(
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
+            android.view.KeyEvent.KEYCODE_DPAD_CENTER
+        )
+        if (!actions.isControlFocused() && event.keyCode in playbackKeys) {
+            return if (event.action == android.view.KeyEvent.ACTION_DOWN) onKeyDown(event.keyCode, event) else true
+        }
+        return super.dispatchKeyEvent(event)
     }
     
     private fun enableFullScreenMode() {
@@ -337,6 +414,7 @@ fun VideoPlayerScreen(
     seasonId: Int?,
     episodeId: Int?,
     onBack: () -> Unit,
+    onRemoteActionsReady: (PlayerRemoteActions) -> Unit = {},
     onPlayerReady: (ExoPlayer) -> Unit
 ) {
     val context = LocalContext.current
@@ -344,6 +422,14 @@ fun VideoPlayerScreen(
     var currentPosition by remember { mutableStateOf(0L) }
     var duration by remember { mutableStateOf(0L) }
     var showControls by remember { mutableStateOf(true) }
+    // Remote control navigation of the controls
+    var controlFocused by remember { mutableStateOf(false) }
+    var controlsInteraction by remember { mutableStateOf(0) }
+    var pendingControlFocus by remember { mutableStateOf<ControlFocus?>(null) }
+    var backKeyConsumed by remember { mutableStateOf(false) }
+    val settingsFocusRequester = remember { FocusRequester() }
+    val seekBarFocusRequester = remember { FocusRequester() }
+    var seekJob by remember { mutableStateOf<Job?>(null) }
     var isSeeking by remember { mutableStateOf(false) }
     var playerError by remember { mutableStateOf<String?>(null) }
     var isRetrying by remember { mutableStateOf(false) }
@@ -358,7 +444,12 @@ fun VideoPlayerScreen(
     // Track selection state
     var showTrackSelectionDialog by remember { mutableStateOf(false) }
     var currentTracks by remember { mutableStateOf(Tracks.EMPTY) }
-    var trackSelector by remember { mutableStateOf<DefaultTrackSelector?>(null) }
+    var trackSelector by remember { mutableStateOf<DualSubtitleTrackSelector?>(null) }
+    
+    // Subtitle text for the dual (Persian + English) overlay
+    var primaryCueText by remember { mutableStateOf("") }
+    var secondaryCueText by remember { mutableStateOf("") }
+    var subtitleMessage by remember { mutableStateOf<String?>(null) }
     
     // Predefined playback speed options
     val speedOptions = remember {
@@ -411,30 +502,70 @@ fun VideoPlayerScreen(
         }
     }
     
+    // Which subtitles are shown (Off / Persian / English / Both) and any manually chosen tracks
+    var subtitleConfig by remember {
+        mutableStateOf(DualSubtitleTrackSelector.SubtitleConfig(subtitleSettings.mode))
+    }
+    
+    fun updateSubtitleConfig(newConfig: DualSubtitleTrackSelector.SubtitleConfig) {
+        val modeChanged = newConfig.mode != subtitleConfig.mode
+        subtitleConfig = newConfig
+        trackSelector?.setSubtitleConfig(newConfig)
+        if (modeChanged) {
+            // Remember the chosen mode for the next video
+            try {
+                StorageUtils.saveSubtitleSettings(
+                    context,
+                    StorageUtils.loadSubtitleSettings(context).copy(mode = newConfig.mode)
+                )
+            } catch (e: Exception) {
+                // Ignore storage errors
+            }
+        }
+    }
+    
+    // English subtitle downloaded from OpenSubtitles for this video (kept between sessions)
+    val coroutineScope = rememberCoroutineScope()
+    val onlineSubtitles = remember(videoUrl) {
+        OnlineSubtitlesState(context, videoUrl, coroutineScope)
+    }
+
     val exoPlayer = remember(context) {
         try {
-            // Create track selector for track selection
-            val selector = DefaultTrackSelector(context)
+            // Track selector that picks subtitle tracks by the chosen subtitle mode
+            val selector = DualSubtitleTrackSelector(context, subtitleConfig.mode)
             trackSelector = selector
             
-            ExoPlayer.Builder(context)
-                .setTrackSelector(selector)
-                .build().apply {
-                    try {
-                        setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
-                        prepare()
-                        // If we're retrying, seek to the current position
-                        if (isRetrying && currentPosition > 0) {
-                            seekTo(currentPosition)
-                        }
-                        playWhenReady = isPlaying // Start with current play state
-                        // Set initial playback speed
-                        setPlaybackSpeed(playbackSpeed)
-                    } catch (e: Exception) {
-                        // Don't show error, just mark as retrying
-                        isRetrying = true
-                    }
+            lateinit var player: ExoPlayer
+            // Second subtitle renderer whose cues (English in "Both" mode) are drawn by our overlay
+            val renderersFactory = DualSubtitleRenderersFactory(
+                context,
+                selector,
+                TextOutput { cueGroup ->
+                    secondaryCueText = cueGroup.cues.toSubtitleText()
+                    reportShownSubtitle(player, selector, secondary = true, text = secondaryCueText)
                 }
+            )
+
+            player = ExoPlayer.Builder(context, renderersFactory)
+                .setTrackSelector(selector)
+                .build()
+            player.apply {
+                try {
+                    setMediaItem(buildMediaItem(videoUrl, onlineSubtitles.subtitle))
+                    prepare()
+                    // If we're retrying, seek to the current position
+                    if (isRetrying && currentPosition > 0) {
+                        seekTo(currentPosition)
+                    }
+                    playWhenReady = isPlaying // Start with current play state
+                    // Set initial playback speed
+                    setPlaybackSpeed(playbackSpeed)
+                } catch (e: Exception) {
+                    // Don't show error, just mark as retrying
+                    isRetrying = true
+                }
+            }
         } catch (e: Exception) {
             // Don't show error, just mark as retrying
             isRetrying = true
@@ -448,6 +579,153 @@ fun VideoPlayerScreen(
             override fun onTracksChanged(tracks: Tracks) {
                 currentTracks = tracks
             }
+            
+            override fun onCues(cueGroup: CueGroup) {
+                primaryCueText = cueGroup.cues.toSubtitleText()
+                reportShownSubtitle(exoPlayer, trackSelector, secondary = false, text = primaryCueText)
+            }
+        }
+    }
+    
+    // Reload the video at the same position when the downloaded subtitle or its timing changes
+    onlineSubtitles.onSubtitleChanged = { subtitle ->
+        exoPlayer?.let { player ->
+            try {
+                val position = player.currentPosition
+                val wasPlaying = player.playWhenReady
+                // Like a seek: buffering after the reload must not be taken as a pause
+                isSeeking = true
+                player.setMediaItem(buildMediaItem(videoUrl, subtitle), position)
+                player.prepare()
+                player.playWhenReady = wasPlaying
+                coroutineScope.launch {
+                    withTimeoutOrNull(10_000) {
+                        while (player.playbackState != Player.STATE_READY) delay(100)
+                    }
+                    isSeeking = false
+                    player.playWhenReady = wasPlaying
+                    isPlaying = wasPlaying
+                }
+            } catch (e: Exception) {
+                // Ignore reload errors
+            }
+        }
+    }
+
+    // Change subtitle mode from the remote and briefly show the result on screen
+    fun cycleSubtitleMode() {
+        val newMode = subtitleConfig.mode.next()
+        updateSubtitleConfig(subtitleConfig.copy(mode = newMode))
+        val available = currentTracks.isEmpty || isSubtitleModeAvailable(newMode, currentTracks, subtitleConfig, trackSelector)
+        subtitleMessage = "Subtitles: ${newMode.label}" + if (available) "" else " (not found in this video)"
+    }
+    
+    // Seek from the remote; like the double tap, buffering after the seek must not pause playback
+    fun seekBy(deltaMs: Long) {
+        val player = exoPlayer ?: return
+        try {
+            val wasPlaying = if (isSeeking) wasPlayingBeforeSeek else isPlaying
+            wasPlayingBeforeSeek = wasPlaying
+            isSeeking = true
+            val newPosition = (player.currentPosition + deltaMs)
+                .coerceIn(0L, player.duration.coerceAtLeast(0L))
+            player.seekTo(newPosition)
+            currentPosition = newPosition
+            if (deltaMs < 0) showRewindIndicator = true else showForwardIndicator = true
+            seekJob?.cancel()
+            seekJob = coroutineScope.launch {
+                delay(200)
+                withTimeoutOrNull(10_000) {
+                    while (player.playbackState != Player.STATE_READY) delay(100)
+                }
+                isSeeking = false
+                player.playWhenReady = wasPlaying
+                isPlaying = wasPlaying
+            }
+        } catch (e: Exception) {
+            // Ignore seek errors
+        }
+    }
+    
+    // Remote control: bring back hidden controls and put focus on the settings button or seek bar
+    fun handleRemoteKey(event: android.view.KeyEvent): Boolean {
+        val keyCode = event.keyCode
+        // Back while moving through the controls hides them instead of leaving the video
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && showControls && controlFocused) {
+                showControls = false
+                controlFocused = false
+                backKeyConsumed = true
+                return true
+            }
+            if (event.action == android.view.KeyEvent.ACTION_UP && backKeyConsumed) {
+                backKeyConsumed = false
+                return true
+            }
+            return false
+        }
+        if (event.action != android.view.KeyEvent.ACTION_DOWN) return false
+        // Any key keeps the controls on screen a little longer
+        controlsInteraction++
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_UP,
+            android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
+                if (showControls && controlFocused) return false // move between the controls
+                showControls = true
+                pendingControlFocus = if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
+                    ControlFocus.SETTINGS
+                } else {
+                    ControlFocus.SEEK_BAR
+                }
+                return true
+            }
+            // Skip back/forward, and show where playback is
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                if (showControls && controlFocused) return false // move between the controls
+                showControls = true
+                val step = videoPlayerSettings.seekTimeSeconds * 1000L
+                seekBy(if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) -step else step)
+                return true
+            }
+            // Still play/pause (handled by the activity), and show the controls
+            android.view.KeyEvent.KEYCODE_DPAD_CENTER -> showControls = true
+        }
+        return false
+    }
+    
+    LaunchedEffect(Unit) {
+        onRemoteActionsReady(
+            PlayerRemoteActions(
+                cycleSubtitleMode = { cycleSubtitleMode() },
+                openTrackSelection = { showTrackSelectionDialog = true },
+                onKey = { handleRemoteKey(it) },
+                isControlFocused = { showControls && controlFocused }
+            )
+        )
+    }
+    
+    // Focus the requested control once the controls are on screen
+    LaunchedEffect(showControls, pendingControlFocus) {
+        val target = pendingControlFocus ?: return@LaunchedEffect
+        if (!showControls) return@LaunchedEffect
+        withFrameNanos { } // wait until the controls are laid out
+        try {
+            if (target == ControlFocus.SEEK_BAR && !isRetrying) {
+                seekBarFocusRequester.requestFocus()
+            } else {
+                settingsFocusRequester.requestFocus()
+            }
+        } catch (e: Exception) {
+            // Ignore focus errors
+        }
+        pendingControlFocus = null
+    }
+    
+    LaunchedEffect(subtitleMessage) {
+        if (subtitleMessage != null) {
+            delay(2500)
+            subtitleMessage = null
         }
     }
     
@@ -572,7 +850,7 @@ fun VideoPlayerScreen(
                     try {
                         exoPlayer?.let { player ->
                             // Retry loading the media
-                            player.setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
+                            player.setMediaItem(buildMediaItem(videoUrl, onlineSubtitles.subtitle))
                             player.prepare()
                             // Seek to the stored position after preparing
                             player.seekTo(retryPosition)
@@ -639,11 +917,13 @@ fun VideoPlayerScreen(
     }
     
     // Hide controls after a delay
-    LaunchedEffect(showControls, isPlaying) {
+    LaunchedEffect(showControls, isPlaying, controlsInteraction) {
         try {
             if (showControls && isPlaying) {
-                delay(3000) // Hide controls after 3 seconds
+                // Hide after 3 seconds, or 6 while moving through the controls with the remote
+                delay(if (controlFocused) 6000 else 3000)
                 showControls = false
+                controlFocused = false
             }
         } catch (e: Exception) {
             // Ignore delay errors
@@ -816,12 +1096,45 @@ fun VideoPlayerScreen(
                     if (playerView is PlayerView) {
                         playerView.setSubtitleTextSize(subtitleSettings.textSize)
                         playerView.setSubtitleColors(subtitleSettings, customTypeface)
+                        // In "Both" mode the two subtitles are drawn stacked by DualSubtitleOverlay
+                        playerView.subtitleView?.visibility =
+                            if (subtitleConfig.mode == SubtitleMode.BOTH) View.GONE else View.VISIBLE
                     }
                 } catch (e: Exception) {
                     // Ignore update errors
                 }
             }
         )
+        
+        if (subtitleConfig.mode == SubtitleMode.BOTH) {
+            DualSubtitleOverlay(
+                primaryText = primaryCueText,
+                secondaryText = secondaryCueText,
+                settings = subtitleSettings,
+                fontFamily = FontManager.loadFontFamily(context, fontSettings.fontType)
+            )
+        }
+        
+        // Short notice after changing the subtitle mode with the remote
+        subtitleMessage?.let { message ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(top = 24.dp),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                Text(
+                    text = message,
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontFamily = FontManager.loadFontFamily(context, fontSettings.fontType),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                )
+            }
+        }
         
         // Rewind indicator
         if (showRewindIndicator) {
@@ -881,6 +1194,7 @@ fun VideoPlayerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.5f))
+                    .onFocusChanged { controlFocused = it.hasFocus }
             ) {
                 // Top bar with back button and settings
                 Box(
@@ -896,6 +1210,7 @@ fun VideoPlayerScreen(
                                 color = Color.Black.copy(alpha = 0.7f),
                                 shape = androidx.compose.foundation.shape.CircleShape
                             )
+                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -914,6 +1229,8 @@ fun VideoPlayerScreen(
                                 shape = androidx.compose.foundation.shape.CircleShape
                             )
                             .align(Alignment.TopEnd)
+                            .focusRequester(settingsFocusRequester)
+                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -938,6 +1255,7 @@ fun VideoPlayerScreen(
                                 color = Color.Black.copy(alpha = 0.7f),
                                 shape = androidx.compose.foundation.shape.CircleShape
                             )
+                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape)
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -995,7 +1313,22 @@ fun VideoPlayerScreen(
                                     // Ignore errors
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(seekBarFocusRequester)
+                                .remoteFocusBorder(RoundedCornerShape(12.dp))
+                                // Remote left/right on the seek bar skip back/forward
+                                .onPreviewKeyEvent { keyEvent ->
+                                    val isLeft = keyEvent.key == Key.DirectionLeft
+                                    if (!isLeft && keyEvent.key != Key.DirectionRight) {
+                                        return@onPreviewKeyEvent false
+                                    }
+                                    if (keyEvent.type == KeyEventType.KeyDown) {
+                                        val step = videoPlayerSettings.seekTimeSeconds * 1000L
+                                        seekBy(if (isLeft) -step else step)
+                                    }
+                                    true
+                                }
                         )
                     }
                     
@@ -1027,7 +1360,7 @@ fun VideoPlayerScreen(
                                                 // Store current position and playback state before retrying
                                                 val retryPosition = currentPosition
                                                 val wasPlaying = isPlaying // Store whether it was playing before the retry
-                                                player.setMediaItem(MediaItem.fromUri(Uri.parse(videoUrl)))
+                                                player.setMediaItem(buildMediaItem(videoUrl, onlineSubtitles.subtitle))
                                                 player.prepare()
                                                 // Seek to the stored position after preparing
                                                 player.seekTo(retryPosition)
@@ -1058,6 +1391,7 @@ fun VideoPlayerScreen(
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
+                                        .remoteFocusBorder(RoundedCornerShape(8.dp))
                                         .clickable { showSpeedDropdown = true }
                                         .padding(4.dp)
                                 ) {
@@ -1110,6 +1444,7 @@ fun VideoPlayerScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = if (playbackSpeed == 1.0f) FontWeight.Bold else FontWeight.Normal,
                                 modifier = Modifier
+                                    .remoteFocusBorder(RoundedCornerShape(8.dp))
                                     .clickable { playbackSpeed = 1.0f }
                                     .padding(4.dp),
                                 fontFamily = FontManager.loadFontFamily(context, fontSettings.fontType)
@@ -1132,6 +1467,9 @@ fun VideoPlayerScreen(
             TrackSelectionDialog(
                 tracks = currentTracks,
                 trackSelector = trackSelector,
+                subtitleConfig = subtitleConfig,
+                onSubtitleConfigChange = { updateSubtitleConfig(it) },
+                onlineSubtitles = onlineSubtitles,
                 onDismiss = { showTrackSelectionDialog = false }
             )
         }
@@ -1141,20 +1479,22 @@ fun VideoPlayerScreen(
 @Composable
 fun TrackSelectionDialog(
     tracks: Tracks,
-    trackSelector: DefaultTrackSelector?,
+    trackSelector: DualSubtitleTrackSelector?,
+    subtitleConfig: DualSubtitleTrackSelector.SubtitleConfig,
+    onSubtitleConfigChange: (DualSubtitleTrackSelector.SubtitleConfig) -> Unit,
+    onlineSubtitles: OnlineSubtitlesState,
     onDismiss: () -> Unit
 ) {
     val audioTrackGroups = remember(tracks) {
         tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
     }
     
-    val textTrackGroups = remember(tracks) {
-        tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
+    val subtitleTracks = remember(tracks, trackSelector) {
+        subtitleTrackOptions(tracks, trackSelector)
     }
     
     // State for dropdown menus
     var showAudioDropdown by remember { mutableStateOf(false) }
-    var showSubtitleDropdown by remember { mutableStateOf(false) }
     
     // Current selections
     val currentAudioSelection = remember(audioTrackGroups) {
@@ -1168,19 +1508,13 @@ fun TrackSelectionDialog(
         } ?: "None"
     }
     
-    val currentSubtitleSelection = remember(textTrackGroups) {
-        textTrackGroups.firstOrNull { it.isSelected }?.let { group ->
-            (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { index ->
-                val format = group.getTrackFormat(index)
-                format.language?.let { 
-                    if (it.isNotEmpty()) it else format.label ?: "Subtitle $index"
-                } ?: format.label ?: "Subtitle $index"
-            }
-        } ?: "None"
-    }
-    
     AlertDialog(
         onDismissRequest = onDismiss,
+        // Wider than the default on landscape screens, so the options don't wrap and fit in height
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+        modifier = Modifier
+            .fillMaxWidth(0.9f)
+            .widthIn(max = 720.dp),
         title = {
             Text(
                 text = "Track Selection",
@@ -1194,8 +1528,75 @@ fun TrackSelectionDialog(
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
+                // Subtitle display mode
+                Text(
+                    text = "Subtitles",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                
+                // Two per row so all modes fit on a landscape phone without scrolling
+                SubtitleMode.entries.chunked(2).forEach { rowModes ->
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        rowModes.forEach { mode ->
+                            SubtitleModeOption(
+                                mode = mode,
+                                isSelected = subtitleConfig.mode == mode,
+                                isAvailable = tracks.isEmpty || isSubtitleModeAvailable(mode, tracks, subtitleConfig, trackSelector),
+                                onSelect = { onSubtitleConfigChange(subtitleConfig.copy(mode = it)) },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+
+                // Which subtitle tracks the file contains
+                Text(
+                    text = if (subtitleTracks.isEmpty()) {
+                        "No subtitle tracks in this video"
+                    } else {
+                        "In this video: " + subtitleTracks.joinToString(", ") { it.name }
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                if (subtitleTracks.isNotEmpty()) {
+                    // Manual track choice, for files whose tracks are unlabeled or mislabeled
+                    if (subtitleConfig.mode == SubtitleMode.PERSIAN || subtitleConfig.mode == SubtitleMode.BOTH) {
+                        SubtitleTrackPicker(
+                            title = "Persian track",
+                            options = subtitleTracks,
+                            selectedKey = subtitleConfig.persianTrackKey,
+                            playingTrack = subtitleTracks.firstOrNull { it.isSelected && !it.isSecondary },
+                            onSelect = { onSubtitleConfigChange(subtitleConfig.copy(persianTrackKey = it)) }
+                        )
+                    }
+                    if (subtitleConfig.mode == SubtitleMode.ENGLISH || subtitleConfig.mode == SubtitleMode.BOTH) {
+                        SubtitleTrackPicker(
+                            title = "English track",
+                            options = subtitleTracks,
+                            selectedKey = subtitleConfig.englishTrackKey,
+                            playingTrack = subtitleTracks.firstOrNull {
+                                it.isSelected && (it.isSecondary || subtitleConfig.mode == SubtitleMode.ENGLISH)
+                            },
+                            onSelect = { onSubtitleConfigChange(subtitleConfig.copy(englishTrackKey = it)) }
+                        )
+                    }
+                }
+                
+                // English subtitle from OpenSubtitles, for videos without one (or when it's out of sync)
+                if (OpenSubtitlesClient.isConfigured &&
+                    (subtitleConfig.mode == SubtitleMode.ENGLISH || subtitleConfig.mode == SubtitleMode.BOTH)
+                ) {
+                    OnlineSubtitlesSection(onlineSubtitles)
+                }
+
                 // Audio track selection
                 if (audioTrackGroups.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         text = "Audio Tracks",
                         style = MaterialTheme.typography.titleMedium,
@@ -1286,107 +1687,6 @@ fun TrackSelectionDialog(
                         }
                     }
                 }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Subtitle track selection
-                if (textTrackGroups.isNotEmpty()) {
-                    Text(
-                        text = "Subtitles",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                    
-                    // Subtitle dropdown
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showSubtitleDropdown = true }
-                            .background(
-                                color = MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .padding(16.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = currentSubtitleSelection,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Icon(
-                                imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = "Expand subtitle tracks",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                        
-                        DropdownMenu(
-                            expanded = showSubtitleDropdown,
-                            onDismissRequest = { showSubtitleDropdown = false },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            // None option
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = "None",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                },
-                                onClick = {
-                                    trackSelector?.setParameters(
-                                        trackSelector.buildUponParameters()
-                                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
-                                    )
-                                    showSubtitleDropdown = false
-                                }
-                            )
-                            
-                            // Subtitle track options
-                            textTrackGroups.forEachIndexed { groupIndex, trackGroup ->
-                                for (i in 0 until trackGroup.length) {
-                                    val format = trackGroup.getTrackFormat(i)
-                                    val trackName = format.language?.let { 
-                                        if (it.isNotEmpty()) it else format.label ?: "Subtitle ${groupIndex + 1}.${i + 1}"
-                                    } ?: format.label ?: "Subtitle ${groupIndex + 1}.${i + 1}"
-                                    
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = trackName,
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurface
-                                            )
-                                        },
-                                        onClick = {
-                                            trackSelector?.setParameters(
-                                                trackSelector.buildUponParameters()
-                                                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
-                                                    .setOverrideForType(
-                                                        TrackSelectionOverride(trackGroup.mediaTrackGroup, i)
-                                                    )
-                                            )
-                                            showSubtitleDropdown = false
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    Text(
-                        text = "No subtitles available",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
         },
         confirmButton = {
@@ -1395,6 +1695,391 @@ fun TrackSelectionDialog(
             }
         }
     )
+}
+
+// A subtitle track found in the video
+private data class SubtitleTrackOption(
+    val key: String,
+    val name: String,
+    val language: SubtitleLanguage,
+    val isSelected: Boolean,
+    // Played by the second subtitle renderer ("Both" mode)
+    val isSecondary: Boolean,
+    // Tagged English only by default (e.g. MKV without a language tag), text not checked yet
+    val mayBePersian: Boolean
+)
+
+private fun subtitleTrackOptions(
+    tracks: Tracks,
+    trackSelector: DualSubtitleTrackSelector?
+): List<SubtitleTrackOption> {
+    val textTracks = tracks.groups
+        .filter { it.type == C.TRACK_TYPE_TEXT }
+        .flatMap { group ->
+            (0 until group.length)
+                .filter { group.isTrackSupported(it) }
+                .map { index -> group to index }
+        }
+        // Group order follows the renderer mapping, which changes with the mode; the container's
+        // track id keeps the numbering stable
+        .sortedBy { (group, index) -> group.getTrackFormat(index).id?.toIntOrNull() ?: Int.MAX_VALUE }
+    return textTracks.mapIndexed { position, (group, index) ->
+        val format = group.getTrackFormat(index)
+        val language = trackSelector?.languageOf(format) ?: SubtitleTracks.classify(format)
+        SubtitleTrackOption(
+            key = SubtitleTracks.keyOf(format),
+            name = SubtitleTracks.displayName(format, position + 1, language),
+            language = language,
+            isSelected = group.isTrackSelected(index),
+            isSecondary = trackSelector?.isSecondaryTrack(format) == true,
+            mayBePersian = trackSelector?.isUnverifiedEnglishTag(format) == true
+        )
+    }
+}
+
+// Passes shown subtitle text to the track selector so it can check the track's real language
+private fun reportShownSubtitle(
+    player: Player?,
+    trackSelector: DualSubtitleTrackSelector?,
+    secondary: Boolean,
+    text: String
+) {
+    if (player == null || trackSelector == null || text.isEmpty()) return
+    val shownFormats = player.currentTracks.groups
+        .filter { it.type == C.TRACK_TYPE_TEXT }
+        .flatMap { group ->
+            (0 until group.length)
+                .filter { group.isTrackSelected(it) }
+                .map { group.getTrackFormat(it) }
+        }
+        .filter { trackSelector.isSecondaryTrack(it) == secondary }
+    // Only when it is clear which track the text came from
+    shownFormats.singleOrNull()?.let { trackSelector.reportSubtitleText(it, text) }
+}
+
+// Whether the video has a track the given mode can show (mirrors DualSubtitleTrackSelector's choice)
+private fun isSubtitleModeAvailable(
+    mode: SubtitleMode,
+    tracks: Tracks,
+    config: DualSubtitleTrackSelector.SubtitleConfig,
+    trackSelector: DualSubtitleTrackSelector?
+): Boolean {
+    val options = subtitleTrackOptions(tracks, trackSelector)
+    val languages = options.map { it.language }
+    val hasPersian = config.persianTrackKey != null ||
+        SubtitleLanguage.PERSIAN in languages || SubtitleLanguage.UNKNOWN in languages ||
+        options.any { it.mayBePersian }
+    val hasEnglish = config.englishTrackKey != null || SubtitleLanguage.ENGLISH in languages ||
+        (SubtitleLanguage.UNKNOWN in languages && options.size > 1)
+    return when (mode) {
+        SubtitleMode.OFF -> true
+        SubtitleMode.PERSIAN -> hasPersian
+        SubtitleMode.ENGLISH -> hasEnglish
+        SubtitleMode.BOTH -> hasPersian && hasEnglish
+    }
+}
+
+private fun List<Cue>.toSubtitleText(): String =
+    mapNotNull { it.text?.toString()?.trim() }
+        .filter { it.isNotEmpty() }
+        .joinToString("\n")
+
+@Composable
+private fun SubtitleModeOption(
+    mode: SubtitleMode,
+    isSelected: Boolean,
+    isAvailable: Boolean,
+    onSelect: (SubtitleMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .selectable(
+                selected = isSelected,
+                role = Role.RadioButton,
+                onClick = { onSelect(mode) }
+            )
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = isSelected,
+            onClick = null
+        )
+        Column(modifier = Modifier.padding(start = 8.dp)) {
+            Text(
+                text = mode.label,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            if (!isAvailable) {
+                Text(
+                    text = "Not in this video",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubtitleTrackPicker(
+    title: String,
+    options: List<SubtitleTrackOption>,
+    selectedKey: String?,
+    playingTrack: SubtitleTrackOption?,
+    onSelect: (String?) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val autoLabel = "Automatic" + (playingTrack?.let { " (${it.name})" } ?: "")
+    val currentLabel = options.firstOrNull { it.key == selectedKey }?.name ?: autoLabel
+    
+    Text(
+        text = title,
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+    )
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .clickable { expanded = true }
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = RoundedCornerShape(8.dp)
+            )
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = currentLabel,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = "Choose $title",
+                tint = MaterialTheme.colorScheme.onSurface
+            )
+        }
+        
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = autoLabel,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (selectedKey == null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onClick = {
+                    onSelect(null)
+                    expanded = false
+                }
+            )
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = option.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (option.key == selectedKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onClick = {
+                        onSelect(option.key)
+                        expanded = false
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun OnlineSubtitlesSection(state: OnlineSubtitlesState) {
+    Text(
+        text = "English subtitle online (OpenSubtitles)",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
+    )
+
+    state.subtitle?.let { subtitle ->
+        Text(
+            text = subtitle.release,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        // Timing correction, for a subtitle that is a little early or late
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { state.shift(-500) }) { Text("Earlier") }
+            Text(
+                text = String.format("%+.1fs", subtitle.offsetMs / 1000f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            TextButton(onClick = { state.shift(500) }) { Text("Later") }
+            Spacer(modifier = Modifier.weight(1f))
+            TextButton(onClick = { state.remove() }) { Text("Remove") }
+        }
+    }
+
+    TextButton(
+        onClick = { state.search() },
+        enabled = !state.isBusy
+    ) {
+        Text(if (state.subtitle == null) "Search online" else "Find another")
+    }
+
+    if (state.isBusy) {
+        androidx.compose.material3.LinearProgressIndicator(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp)
+        )
+    }
+
+    state.results.take(10).forEach { result ->
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(enabled = !state.isBusy) { state.download(result) }
+                .padding(vertical = 8.dp, horizontal = 4.dp)
+        ) {
+            Text(
+                text = result.release,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 2
+            )
+            Text(
+                text = buildString {
+                    if (result.matchesFile) append("✓ Made for this file · ")
+                    append("${result.downloadCount} downloads")
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (result.matchesFile) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    state.message?.let { message ->
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp)
+        )
+    }
+}
+
+// Video with the downloaded English subtitle (if any) attached as an extra subtitle track
+private fun buildMediaItem(videoUrl: String, externalSubtitle: ExternalSubtitle?): MediaItem {
+    val builder = MediaItem.Builder().setUri(Uri.parse(videoUrl))
+    if (externalSubtitle != null) {
+        builder.setSubtitleConfigurations(
+            listOf(
+                MediaItem.SubtitleConfiguration.Builder(Uri.fromFile(externalSubtitle.file))
+                    .setId("opensubtitles")
+                    .setMimeType(MimeTypes.APPLICATION_SUBRIP)
+                    .setLanguage("en")
+                    .setLabel(SubtitleTracks.EXTERNAL_LABEL)
+                    .build()
+            )
+        )
+    }
+    return builder.build()
+}
+
+// Persian and English subtitles stacked at the bottom, English above Persian
+@Composable
+private fun DualSubtitleOverlay(
+    primaryText: String,
+    secondaryText: String,
+    settings: SubtitleSettings,
+    fontFamily: FontFamily?
+) {
+    if (primaryText.isEmpty() && secondaryText.isEmpty()) return
+    
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                // Same bottom margin as ExoPlayer's SubtitleView (8% of the height)
+                .padding(start = 24.dp, end = 24.dp, bottom = maxHeight * 0.08f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (secondaryText.isNotEmpty()) {
+                OutlinedSubtitleText(secondaryText, settings, fontFamily)
+            }
+            if (primaryText.isNotEmpty()) {
+                OutlinedSubtitleText(primaryText, settings, fontFamily)
+            }
+        }
+    }
+}
+
+// Styled like setSubtitleColors(): the border color is both the box behind the text and the outline
+@Composable
+private fun OutlinedSubtitleText(
+    text: String,
+    settings: SubtitleSettings,
+    fontFamily: FontFamily?
+) {
+    val outlineWidth = with(LocalDensity.current) { 2.dp.toPx() }
+    val style = TextStyle(
+        fontSize = settings.textSize.sp,
+        fontFamily = fontFamily,
+        textAlign = TextAlign.Center,
+        textDirection = TextDirection.Content
+    )
+    Box(
+        modifier = Modifier
+            .background(Color(settings.borderColor))
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            style = style.copy(
+                color = Color(settings.borderColor),
+                drawStyle = Stroke(width = outlineWidth, join = StrokeJoin.Round)
+            )
+        )
+        Text(
+            text = text,
+            style = style.copy(color = Color(settings.textColor))
+        )
+    }
+}
+
+// Which control gets focus when the remote brings the controls back
+private enum class ControlFocus { SETTINGS, SEEK_BAR }
+
+// White border on the focused control, so remote navigation is visible on a TV
+@Composable
+private fun Modifier.remoteFocusBorder(shape: Shape): Modifier {
+    var focused by remember { mutableStateOf(false) }
+    return this
+        .onFocusChanged { focused = it.isFocused }
+        .then(if (focused) Modifier.border(3.dp, Color.White, shape) else Modifier)
 }
 
 fun formatTime(milliseconds: Long): String {

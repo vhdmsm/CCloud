@@ -22,6 +22,18 @@ android {
         versionName = "2.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // OpenSubtitles API key from secrets.properties (not committed); empty disables online subtitles
+        val secretsProperties = Properties()
+        val secretsPropertiesFile = rootProject.file("secrets.properties")
+        if (secretsPropertiesFile.exists()) {
+            secretsPropertiesFile.inputStream().use { secretsProperties.load(it) }
+        }
+        buildConfigField(
+            "String",
+            "OPENSUBTITLES_API_KEY",
+            "\"${secretsProperties.getProperty("OPENSUBTITLES_API_KEY", "")}\""
+        )
         
         // Add memory management options
         multiDexEnabled = true
