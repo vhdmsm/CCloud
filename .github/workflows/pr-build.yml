@@ -41,6 +41,11 @@ jobs:
           echo "WATCHMODE_API_KEY3=${{ secrets.WATCHMODE_API_KEY3 }}" >> secrets.properties
           echo "WATCHMODE_API_KEY4=${{ secrets.WATCHMODE_API_KEY4 }}" >> secrets.properties
           echo "WATCHMODE_API_KEY5=${{ secrets.WATCHMODE_API_KEY5 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY6=${{ secrets.WATCHMODE_API_KEY6 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY7=${{ secrets.WATCHMODE_API_KEY7 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY8=${{ secrets.WATCHMODE_API_KEY8 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY9=${{ secrets.WATCHMODE_API_KEY9 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY10=${{ secrets.WATCHMODE_API_KEY10 }}" >> secrets.properties
 
       - name: Run unit tests
         run: |

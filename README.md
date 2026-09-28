@@ -191,12 +191,10 @@ The single-field and combined movie sorts read popularity, actors and release da
 2. For local builds, add them to `secrets.properties` in the project root:
    ```properties
    WATCHMODE_API_KEY=your_watchmode_key
-   # Optional extra Watchmode keys (up to 5): requests are spread over all of them, each adds
-   # 120 requests a minute and a monthly quota
+   # Optional extra Watchmode keys, WATCHMODE_API_KEY2 up to WATCHMODE_API_KEY10: requests are
+   # spread over all of them, each adds 120 requests a minute and a monthly quota
    WATCHMODE_API_KEY2=your_second_watchmode_key
    WATCHMODE_API_KEY3=your_third_watchmode_key
-   WATCHMODE_API_KEY4=your_fourth_watchmode_key
-   WATCHMODE_API_KEY5=your_fifth_watchmode_key
    OMDB_API_KEY=your_omdb_key
    # Optional extra OMDb keys, used in turn when one reaches its daily limit
    OMDB_API_KEY2=your_second_omdb_key

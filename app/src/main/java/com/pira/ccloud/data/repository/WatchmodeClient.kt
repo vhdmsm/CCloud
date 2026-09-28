@@ -44,12 +44,9 @@ object WatchmodeClient {
     // Below this share of the month's credits left, only this year's movies get new lookups
     private const val RESERVE_SHARE = 0.2
 
-    private val keys: List<String>
-        get() = listOf(
-            BuildConfig.WATCHMODE_API_KEY, BuildConfig.WATCHMODE_API_KEY2, BuildConfig.WATCHMODE_API_KEY3,
-            BuildConfig.WATCHMODE_API_KEY4, BuildConfig.WATCHMODE_API_KEY5
-        )
-            .filter { it.isNotEmpty() }
+    private val keys: List<String> by lazy {
+        BuildConfig.WATCHMODE_API_KEYS.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    }
 
     // Monthly quota and credits used per key, from the last response's headers
     private val keyQuota = ConcurrentHashMap<String, Pair<Long, Long>>()
