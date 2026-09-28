@@ -19,12 +19,15 @@ import com.pira.ccloud.data.repository.MovieRanking
 import com.pira.ccloud.data.repository.OmdbClient
 import java.util.Locale
 
-/** Loads the movie's awards, current IMDb rating and criteria; null while loading or on failure. */
+/**
+ * Loads the movie's (or with [series], the series') awards, current IMDb rating and criteria;
+ * null while loading or on failure.
+ */
 @Composable
-fun rememberMovieInsight(movie: Movie): MovieInsights.Insight? {
-    val insight by produceState<MovieInsights.Insight?>(initialValue = null, movie.id) {
+fun rememberMovieInsight(movie: Movie, series: Boolean = false): MovieInsights.Insight? {
+    val insight by produceState<MovieInsights.Insight?>(initialValue = null, movie.id, series) {
         value = try {
-            MovieInsights.load(movie)
+            MovieInsights.load(movie, series)
         } catch (e: Exception) {
             null
         }
@@ -32,7 +35,7 @@ fun rememberMovieInsight(movie: Movie): MovieInsights.Insight? {
     return insight
 }
 
-/** The movie's awards and the value of each ranking criterion, below its description. */
+/** The movie's (or series') awards and the value of each ranking criterion, below its description. */
 @Composable
 fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: Modifier = Modifier) {
     Column(
@@ -91,7 +94,7 @@ fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: 
                 format(
                     "%.2f = rating %.2f + awards %.2f + popularity %.2f + actors %.2f",
                     parts.total, parts.rating, parts.awards, parts.popularity, parts.actors
-                ) + if (parts.awardsSpread) "\n(recent movie: the awards' share is spread over rating, popularity and actors, and its awards are added on top)" else ""
+                ) + if (parts.awardsSpread) "\n(recent: the awards' share is spread over rating, popularity and actors, and its awards are added on top)" else ""
             )
             if (data.incomplete) {
                 Text(

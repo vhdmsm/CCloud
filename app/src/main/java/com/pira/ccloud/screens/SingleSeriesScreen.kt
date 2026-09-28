@@ -66,6 +66,8 @@ import coil.request.ImageRequest
 import com.pira.ccloud.VideoPlayerActivity
 import com.pira.ccloud.components.DownloadOptionsDialog
 import com.pira.ccloud.components.ExpandableText
+import com.pira.ccloud.components.MovieScoresSection
+import com.pira.ccloud.components.rememberMovieInsight
 import com.pira.ccloud.data.model.FavoriteItem
 import com.pira.ccloud.data.model.Episode
 import com.pira.ccloud.data.model.Season
@@ -399,6 +401,9 @@ fun SeriesDetailsContent(
     var selectedSeasonIndex by remember { mutableStateOf(0) }
     var showEpisodeImageDialog by remember { mutableStateOf(false) }
     var episodeImageUrl by remember { mutableStateOf("") }
+    // Awards, criteria and the current IMDb rating (the site's rating is from when the series was added)
+    val seriesAsMovie = remember(series) { series.toMovie() }
+    val insight = rememberMovieInsight(seriesAsMovie, series = true)
     
     LazyColumn(
         modifier = modifier
@@ -532,7 +537,7 @@ fun SeriesDetailsContent(
                             Spacer(modifier = Modifier.width(8.dp))
                             
                             Text(
-                                text = String.format("%.1f", series.imdb),
+                                text = String.format("%.1f", insight?.facts?.imdb ?: series.imdb),
                                 style = MaterialTheme.typography.headlineSmall,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -711,6 +716,15 @@ fun SeriesDetailsContent(
                         .fillMaxWidth()
                 )
             }
+        }
+        
+        item {
+            // Awards and the ranking criteria
+            MovieScoresSection(
+                movie = seriesAsMovie,
+                insight = insight,
+                modifier = Modifier.padding(top = 16.dp)
+            )
         }
         
         // Seasons selection
