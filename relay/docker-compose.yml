@@ -1,0 +1,28 @@
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - relay-data:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    # Change HTTPS_PORT in .env if 443 is already taken (e.g. by your VPN)
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      - RELAY_DOMAIN=${RELAY_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - relay
+
+volumes:
+  relay-data:
+  caddy-data:
+  caddy-config:

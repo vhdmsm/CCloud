@@ -91,6 +91,9 @@ jobs:
           echo "OMDB_API_KEY=${{ secrets.OMDB_API_KEY }}" >> secrets.properties
           echo "OMDB_API_KEY2=${{ secrets.OMDB_API_KEY2 }}" >> secrets.properties
           echo "OMDB_API_KEY3=${{ secrets.OMDB_API_KEY3 }}" >> secrets.properties
+          # With a relay the TMDB and OMDb keys above are left out of the app
+          echo "RELAY_URL=${{ secrets.RELAY_URL }}" >> secrets.properties
+          echo "RELAY_TOKEN=${{ secrets.RELAY_TOKEN }}" >> secrets.properties
         continue-on-error: true
 
       - name: Build APK

@@ -193,6 +193,8 @@ The single-field and combined movie sorts read popularity, votes, actors and rel
    ```
 3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
 
+TMDB can't be reached from Iran. For that, run the small relay server in [`relay/`](relay/README.md) on a VPS outside Iran and add the `RELAY_URL` and `RELAY_TOKEN` secrets: the app then sends TMDB and OMDb requests through it, and the keys stay on the server instead of in the app.
+
 Each OMDb key allows 1000 requests a day, shared by everyone using the build. To save them, only the award sorts (Most Awards, Best Overall) use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device for 30 days.
 
 ### Fixing Gradle Wrapper Issues

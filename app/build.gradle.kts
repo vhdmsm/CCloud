@@ -34,28 +34,18 @@ android {
             "OPENSUBTITLES_API_KEY",
             "\"${secretsProperties.getProperty("OPENSUBTITLES_API_KEY", "")}\""
         )
+        // Relay server for TMDB and OMDb (relay/ in this repository), for places where they're blocked.
+        // With a relay the TMDB and OMDb keys stay on the server and aren't built into the app.
+        val relayUrl = secretsProperties.getProperty("RELAY_URL", "")
+        fun apiKey(name: String) = if (relayUrl.isEmpty()) secretsProperties.getProperty(name, "") else ""
+        buildConfigField("String", "RELAY_URL", "\"$relayUrl\"")
+        buildConfigField("String", "RELAY_TOKEN", "\"${secretsProperties.getProperty("RELAY_TOKEN", "")}\"")
         // TMDB API key (or read access token) for the ranked movie sorts; empty hides the sorts that need it
-        buildConfigField(
-            "String",
-            "TMDB_API_KEY",
-            "\"${secretsProperties.getProperty("TMDB_API_KEY", "")}\""
-        )
+        buildConfigField("String", "TMDB_API_KEY", "\"${apiKey("TMDB_API_KEY")}\"")
         // OMDb API keys for award data, used in turn (each allows 1000 requests a day); empty hides the award sorts
-        buildConfigField(
-            "String",
-            "OMDB_API_KEY",
-            "\"${secretsProperties.getProperty("OMDB_API_KEY", "")}\""
-        )
-        buildConfigField(
-            "String",
-            "OMDB_API_KEY2",
-            "\"${secretsProperties.getProperty("OMDB_API_KEY2", "")}\""
-        )
-        buildConfigField(
-            "String",
-            "OMDB_API_KEY3",
-            "\"${secretsProperties.getProperty("OMDB_API_KEY3", "")}\""
-        )
+        buildConfigField("String", "OMDB_API_KEY", "\"${apiKey("OMDB_API_KEY")}\"")
+        buildConfigField("String", "OMDB_API_KEY2", "\"${apiKey("OMDB_API_KEY2")}\"")
+        buildConfigField("String", "OMDB_API_KEY3", "\"${apiKey("OMDB_API_KEY3")}\"")
         
         // Add memory management options
         multiDexEnabled = true

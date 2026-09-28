@@ -3,6 +3,7 @@ package com.pira.ccloud.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import com.pira.ccloud.BuildConfig
+import com.pira.ccloud.data.repository.ApiRelay.relayToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -24,8 +25,13 @@ object OmdbClient {
     private const val LIMIT_BACKOFF_MS = 3L * 60 * 60 * 1000
     private const val OFFLINE_BACKOFF_MS = 60_000L
 
+    // Through the relay the server holds and rotates the keys, so the app uses a single empty one
     private val keys: List<String>
-        get() = listOf(BuildConfig.OMDB_API_KEY, BuildConfig.OMDB_API_KEY2, BuildConfig.OMDB_API_KEY3).filter { it.isNotEmpty() }
+        get() = if (ApiRelay.isEnabled) {
+            listOf("")
+        } else {
+            listOf(BuildConfig.OMDB_API_KEY, BuildConfig.OMDB_API_KEY2, BuildConfig.OMDB_API_KEY3).filter { it.isNotEmpty() }
+        }
 
     val isConfigured: Boolean get() = keys.isNotEmpty()
 
@@ -73,6 +79,8 @@ object OmdbClient {
             if ((keyBlockedUntil[key] ?: 0L) > System.currentTimeMillis()) continue
             try {
                 val json = get(imdbId, key)
+                // Not an OMDb answer (e.g. the relay's rate limit): try again later, cache nothing
+                if (!json.has("Response")) return@withContext null
                 if (json.optString("Response") == "True") {
                     val text = json.optString("Awards", "N/A")
                     writeCache(imdbId, text)
@@ -115,11 +123,11 @@ object OmdbClient {
     }
 
     private fun get(imdbId: String, key: String): JSONObject {
-        val url = BASE_URL.toHttpUrl().newBuilder()
+        val url = (if (ApiRelay.isEnabled) "${ApiRelay.url}/omdb/" else BASE_URL).toHttpUrl().newBuilder()
             .addQueryParameter("i", imdbId)
-            .addQueryParameter("apikey", key)
+            .apply { if (key.isNotEmpty()) addQueryParameter("apikey", key) }
             .build()
-        return client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+        return client.newCall(Request.Builder().url(url).relayToken().build()).execute().use { response ->
             // The daily limit comes back as 401 with a JSON error, so read the body either way
             val body = response.body?.string().orEmpty()
             try {

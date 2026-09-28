@@ -1,6 +1,7 @@
 package com.pira.ccloud.data.repository
 
 import com.pira.ccloud.BuildConfig
+import com.pira.ccloud.data.repository.ApiRelay.relayToken
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -22,7 +23,10 @@ object TmdbClient {
     // make every movie wait for its own timeout
     private const val OFFLINE_BACKOFF_MS = 60_000L
 
-    val isConfigured: Boolean get() = BuildConfig.TMDB_API_KEY.isNotEmpty()
+    val isConfigured: Boolean get() = ApiRelay.isEnabled || BuildConfig.TMDB_API_KEY.isNotEmpty()
+
+    // Through the relay the key is added on the server
+    private val baseUrl: String get() = if (ApiRelay.isEnabled) "${ApiRelay.url}/tmdb" else BASE_URL
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -125,16 +129,17 @@ object TmdbClient {
     }
 
     private fun get(path: String, vararg params: Pair<String, String>): JSONObject {
-        val apiKey = BuildConfig.TMDB_API_KEY
-        val url = "$BASE_URL$path".toHttpUrl().newBuilder().apply {
+        val apiKey = if (ApiRelay.isEnabled) "" else BuildConfig.TMDB_API_KEY
+        val url = "$baseUrl$path".toHttpUrl().newBuilder().apply {
             params.forEach { (name, value) -> addQueryParameter(name, value) }
             // A v3 API key goes in the URL; a v4 read access token (a JWT) goes in the header
-            if (!apiKey.startsWith("eyJ")) addQueryParameter("api_key", apiKey)
+            if (apiKey.isNotEmpty() && !apiKey.startsWith("eyJ")) addQueryParameter("api_key", apiKey)
         }.build()
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
             .apply { if (apiKey.startsWith("eyJ")) header("Authorization", "Bearer $apiKey") }
+            .relayToken()
             .build()
         return client.newCall(request).execute().use { response ->
             // A rejected key fails every request, so treat it like an unreachable server
