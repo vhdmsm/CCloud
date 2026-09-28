@@ -19,7 +19,9 @@ import kotlin.math.log10
  */
 class RankedMovieRepository(
     // A page of the server's list: page, genre, server sort
-    private val fetchPage: suspend (Int, Int, FilterType) -> List<Movie> = MovieRepository()::getMovies
+    private val fetchPage: suspend (Int, Int, FilterType) -> List<Movie> = MovieRepository()::getMovies,
+    // Whether the first load may rank the two newest years together (it costs more requests)
+    private val mayMergeRecentYears: () -> Boolean = { !WatchmodeClient.isSavingCredits }
 ) {
     data class RankedPage(
         val movies: List<Movie>,
@@ -56,8 +58,9 @@ class RankedMovieRepository(
         var hasMore = true
         if (readsNewestFirst(filterType)) {
             // One release year per load: all of this year's movies are ranked together, then last
-            // year's on the next load, and so on. A page that runs into the next year is read again
-            // next time for the rest.
+            // year's on the next load, and so on. The first load takes the two newest years together
+            // while credits last. A page that runs into an older year is read again next time for the rest.
+            val yearsInBatch = if (handledIds.isEmpty() && mayMergeRecentYears()) 2 else 1
             var yearsRead = 0
             // A year whose movies were all skipped (e.g. only Indian ones) gives nothing to show, so go on
             while (batch.isEmpty() && hasMore && yearsRead < MAX_YEARS_PER_LOAD) {
@@ -69,12 +72,12 @@ class RankedMovieRepository(
                     hasMore = candidates.isNotEmpty()
                     val unseen = candidates.filter { it.id !in seen }
                     if (batchYear == null) batchYear = unseen.maxOfOrNull { it.year }
-                    val year = batchYear
-                    val (sameYear, older) = if (year == null) emptyList<Movie>() to emptyList() else unseen.partition { it.year >= year }
+                    val oldestYear = batchYear?.let { it - (yearsInBatch - 1) }
+                    val (sameYear, older) = if (oldestYear == null) emptyList<Movie>() to emptyList() else unseen.partition { it.year >= oldestYear }
                     sameYear.forEach { seen.add(it.id) }
                     batch += addFacts(sameYear.filter { MovieRanking.isCandidate(it, filterType) }, filterType, permits)
                     lastPage = if (older.isNotEmpty()) currentPage - 1 else currentPage
-                    if (older.isNotEmpty() || !hasMore || currentPage - firstPage + 1 >= MAX_PAGES_PER_YEAR) break
+                    if (older.isNotEmpty() || !hasMore || currentPage - firstPage + 1 >= MAX_PAGES_PER_YEAR * yearsInBatch) break
                     currentPage++
                 }
                 currentPage = lastPage + 1
@@ -266,9 +269,10 @@ object MovieRanking {
      * Missing parts count as zero. The release year isn't weighed: the list is read one year at a
      * time, so the movies ranked together are from the same year already.
      *
-     * This year's movies haven't had time to win awards, so the awards' share is spread evenly over
-     * the other three, and awards they already have are added on top (at the awards' weight): missing
-     * awards cost nothing, early awards still count.
+     * Recent movies (this year's and last year's, which are ranked together) haven't had time to win
+     * all their awards, so the awards' share is spread evenly over the other three, and awards they
+     * already have are added on top (at the awards' weight): missing awards cost nothing, early
+     * awards still count.
      */
     fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
         bestOverallParts(facts, currentYear).total
@@ -279,7 +283,7 @@ object MovieRanking {
         val awards: Double,
         val popularity: Double,
         val actors: Double,
-        // A movie of this year: the awards' share spread over the rest, its awards added on top
+        // A recent movie: the awards' share spread over the rest, its awards added on top
         val awardsSpread: Boolean = false
     ) {
         val total: Double get() = rating + awards + popularity + actors
@@ -297,7 +301,7 @@ object MovieRanking {
             popularity = POPULARITY_WEIGHT * popularity,
             actors = ACTORS_WEIGHT * actors
         )
-        if (facts.movie.year < currentYear) return withAwards
+        if (facts.movie.year < currentYear - 1) return withAwards
         val share = AWARDS_WEIGHT / 3
         return BestOverallParts(
             rating = (RATING_WEIGHT + share) * rating,

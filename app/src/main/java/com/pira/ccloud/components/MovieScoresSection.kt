@@ -78,7 +78,7 @@ fun MovieScoresSection(movie: Movie, modifier: Modifier = Modifier) {
                 format(
                     "%.2f = rating %.2f + awards %.2f + popularity %.2f + actors %.2f",
                     parts.total, parts.rating, parts.awards, parts.popularity, parts.actors
-                ) + if (parts.awardsSpread) "\n(this year's movie: the awards' share is spread over rating, popularity and actors, and its awards are added on top)" else ""
+                ) + if (parts.awardsSpread) "\n(recent movie: the awards' share is spread over rating, popularity and actors, and its awards are added on top)" else ""
             )
             if (data.incomplete) {
                 Text(

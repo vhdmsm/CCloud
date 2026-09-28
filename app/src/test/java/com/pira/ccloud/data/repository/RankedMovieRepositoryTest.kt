@@ -18,8 +18,8 @@ class RankedMovieRepositoryTest {
         country = listOf(Country(1, "امریکا", ""))
     )
 
-    private fun repository(pages: List<List<Movie>>) =
-        RankedMovieRepository { page, _, _ -> pages.getOrElse(page) { emptyList() } }
+    private fun repository(pages: List<List<Movie>>, mergeRecentYears: Boolean = false) =
+        RankedMovieRepository({ page, _, _ -> pages.getOrElse(page) { emptyList() } }, { mergeRecentYears })
 
     @Test
     fun ranksOneReleaseYearPerLoad() = runBlocking {
@@ -40,6 +40,21 @@ class RankedMovieRepositoryTest {
         val second = repo.getRankedMovies(first.lastPage + 1, 0, FilterType.NEWEST, first.handledIds)
         assertEquals((9..15).toSet(), second.movies.map { it.id }.toSet())
         assertFalse(second.hasMore)
+    }
+
+    @Test
+    fun ranksTheTwoNewestYearsTogetherWhileCreditsLast() = runBlocking {
+        val pages = listOf(
+            (1..3).map { movie(it, 2026) } + (4..5).map { movie(it, 2025) },
+            (6..7).map { movie(it, 2025) } + (8..9).map { movie(it, 2024) },
+            (10..12).map { movie(it, 2024) }
+        )
+        val repo = repository(pages, mergeRecentYears = true)
+        val first = repo.getRankedMovies(0, 0, FilterType.NEWEST, emptySet())
+        assertEquals((1..7).toSet(), first.movies.map { it.id }.toSet())
+        // Later loads take one year at a time
+        val second = repo.getRankedMovies(first.lastPage + 1, 0, FilterType.NEWEST, first.handledIds)
+        assertEquals((8..12).toSet(), second.movies.map { it.id }.toSet())
     }
 
     @Test

@@ -177,10 +177,12 @@ class MovieRankingTest {
         assertTrue(parts.awardsSpread)
         assertEquals(0.0, parts.awards, 1e-9)
         assertEquals((0.30 + 0.25 / 3) * (7.9 - 5.0) / 4.0, parts.rating, 0.01)
-        // The same movie from last year gets no such help
+        // Last year's movies are recent too (they're ranked together); older ones get no such help
         val lastYear = MovieFacts(movie(2, 7.9, currentYear - 1), info(popularity = 99.996, relevance = 99.873, cast = 0.5), null)
-        assertFalse(MovieRanking.bestOverallParts(lastYear, currentYear).awardsSpread)
-        assertTrue(parts.total > MovieRanking.bestOverallScore(lastYear, currentYear))
+        assertTrue(MovieRanking.bestOverallParts(lastYear, currentYear).awardsSpread)
+        val older = MovieFacts(movie(3, 7.9, currentYear - 2), info(popularity = 99.996, relevance = 99.873, cast = 0.5), null)
+        assertFalse(MovieRanking.bestOverallParts(older, currentYear).awardsSpread)
+        assertTrue(parts.total > MovieRanking.bestOverallScore(older, currentYear))
     }
 
     @Test

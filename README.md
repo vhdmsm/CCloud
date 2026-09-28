@@ -70,7 +70,7 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Combined sorts**:
   - **Top Picks (Rating + Year)**: IMDB score with a bonus for newer releases (movies rated 6.5 or higher)
   - **Popular + Actors**: popularity, how widely known the movie is, and lead actors
-  - **Best Overall (All)**: rating (the server's IMDB, 30%), awards (25%), popularity (30%) and actors (15%) together (the year isn't weighed: these sorts already go one year at a time). This year's movies, which haven't had time to win awards, spread the awards' share evenly over the other three and get their awards added on top, so missing awards cost nothing and early awards still count
+  - **Best Overall (All)**: rating (the server's IMDB, 30%), awards (25%), popularity (30%) and actors (15%) together (the year isn't weighed: these sorts already go one year at a time). Recent movies (this year's and last year's), which haven't had time to win all their awards, spread the awards' share evenly over the other three and get their awards added on top, so missing awards cost nothing and early awards still count
 - Indian and Turkish movies are left out of the single-field and combined sorts
 - Each movie's page shows its awards and the value of every criterion (popularity, how well known it is, lead actors, release date, Top Rated and Best Overall scores with their parts)
 - Movie data (popularity, actors) comes from Watchmode, awards from the description or OMDb; the site's own posts (Persian titles) and Indian and Turkish movies (by country or the site's genres) are skipped before any request
@@ -199,7 +199,7 @@ The single-field and combined movie sorts read popularity, actors and release da
    ```
 3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
 
-Watchmode's free plan has a monthly quota: each movie costs 2 credits (the actor sorts a few more; actors are cached). The sorts that use it read the server's newest-first list one release year at a time: all of this year's movies are ranked together, then last year's as you scroll, and so on; when less than 20% of the month's credits are left, only this year's movies get new lookups. Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
+Watchmode's free plan has a monthly quota: each movie costs 2 credits (the actor sorts a few more; actors are cached). The sorts that use it read the server's newest-first list by release year: this year's and last year's movies are ranked together first (only this year's when credits are low), then each older year as you scroll; when less than 20% of the month's credits are left, only this year's movies get new lookups. Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
 
 OMDb allows 1000 requests a day per key. To save them, only the award sorts (Most Awards, Best Overall) use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device for 30 days.
 
