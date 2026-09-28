@@ -34,18 +34,15 @@ android {
             "OPENSUBTITLES_API_KEY",
             "\"${secretsProperties.getProperty("OPENSUBTITLES_API_KEY", "")}\""
         )
-        // Relay server for OMDb (relay/ in this repository), for places where it's blocked.
-        // With a relay the OMDb keys stay on the server and aren't built into the app.
-        val relayUrl = secretsProperties.getProperty("RELAY_URL", "")
-        fun apiKey(name: String) = if (relayUrl.isEmpty()) secretsProperties.getProperty(name, "") else ""
-        buildConfigField("String", "RELAY_URL", "\"$relayUrl\"")
-        buildConfigField("String", "RELAY_TOKEN", "\"${secretsProperties.getProperty("RELAY_TOKEN", "")}\"")
+        fun apiKey(name: String) = secretsProperties.getProperty(name, "")
         // OMDb API keys for award data, used in turn (each allows 1000 requests a day); empty hides the award sorts
         buildConfigField("String", "OMDB_API_KEY", "\"${apiKey("OMDB_API_KEY")}\"")
         buildConfigField("String", "OMDB_API_KEY2", "\"${apiKey("OMDB_API_KEY2")}\"")
         buildConfigField("String", "OMDB_API_KEY3", "\"${apiKey("OMDB_API_KEY3")}\"")
-        // Watchmode API key: popularity, actors and release dates for the ranked movie sorts; empty hides them
-        buildConfigField("String", "WATCHMODE_API_KEY", "\"${secretsProperties.getProperty("WATCHMODE_API_KEY", "")}\"")
+        // Watchmode API keys for popularity, actors and release dates, used in turn when one reaches its
+        // monthly quota; empty hides the sorts that need them
+        buildConfigField("String", "WATCHMODE_API_KEY", "\"${apiKey("WATCHMODE_API_KEY")}\"")
+        buildConfigField("String", "WATCHMODE_API_KEY2", "\"${apiKey("WATCHMODE_API_KEY2")}\"")
         
         // Add memory management options
         multiDexEnabled = true

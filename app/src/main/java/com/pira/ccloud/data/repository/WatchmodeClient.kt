@@ -16,19 +16,23 @@ import java.util.concurrent.TimeUnit
 /**
  * Movie data from Watchmode (https://api.watchmode.com): popularity, how well known a movie and
  * its actors are, release dates and IMDb ids. The free plan has a small monthly quota (each request
- * costs a credit), so answers are kept on the device for 30 days, the longest its terms allow.
+ * costs a credit), so the keys are used in turn and answers are kept on the device for 30 days, the
+ * longest its terms allow.
  */
 object WatchmodeClient {
     private const val BASE_URL = "https://api.watchmode.com/v1"
     private const val CACHE_TTL_MS = 30L * 24 * 60 * 60 * 1000
     // Actors whose popularity is read for Famous Actors (each costs a credit the first time)
     private const val TOP_CAST_COUNT = 3
-    // Wrong key or monthly quota used up
+    // A key that was rejected or used up its monthly quota is tried again after this
     private const val BLOCKED_BACKOFF_MS = 6L * 60 * 60 * 1000
     // Too many requests this minute, or no connection
     private const val SHORT_BACKOFF_MS = 60_000L
 
-    val isConfigured: Boolean get() = BuildConfig.WATCHMODE_API_KEY.isNotEmpty()
+    private val keys: List<String>
+        get() = listOf(BuildConfig.WATCHMODE_API_KEY, BuildConfig.WATCHMODE_API_KEY2).filter { it.isNotEmpty() }
+
+    val isConfigured: Boolean get() = keys.isNotEmpty()
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -38,11 +42,17 @@ object WatchmodeClient {
     private var prefs: SharedPreferences? = null
     private val memoryCache = ConcurrentHashMap<String, String>()
 
-    @Volatile
-    private var unavailableUntil = 0L
+    private val keyBlockedUntil = ConcurrentHashMap<String, Long>()
 
-    // False while the key is rejected, the quota is used up or Watchmode can't be reached
-    val isAvailable: Boolean get() = isConfigured && System.currentTimeMillis() >= unavailableUntil
+    @Volatile
+    private var offlineUntil = 0L
+
+    // False while every key is rejected or out of quota, or Watchmode can't be reached
+    val isAvailable: Boolean
+        get() {
+            val now = System.currentTimeMillis()
+            return now >= offlineUntil && keys.any { (keyBlockedUntil[it] ?: 0L) <= now }
+        }
 
     fun init(context: Context) {
         if (prefs == null) prefs = context.applicationContext.getSharedPreferences("watchmode", Context.MODE_PRIVATE)
@@ -73,7 +83,7 @@ object WatchmodeClient {
             }
             toInfo(stored)
         } catch (e: IOException) {
-            block(SHORT_BACKOFF_MS)
+            offlineUntil = System.currentTimeMillis() + SHORT_BACKOFF_MS
             null
         } catch (e: Exception) {
             null
@@ -138,39 +148,44 @@ object WatchmodeClient {
         )
     }
 
+    // Tries the keys in turn, skipping ones that are rejected or out of quota.
     // Arrays (cast-crew) come back wrapped as {"__array": [...]}
     private fun get(path: String, vararg params: Pair<String, String>): JSONObject {
         val url = "$BASE_URL$path".toHttpUrl().newBuilder()
             .apply { params.forEach { (name, value) -> addQueryParameter(name, value) } }
             .build()
-        val request = Request.Builder()
-            .url(url)
-            .header("X-API-Key", BuildConfig.WATCHMODE_API_KEY)
-            .header("Accept", "application/json")
-            .build()
-        return client.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            when (response.code) {
-                200 -> if (body.trimStart().startsWith("[")) JSONObject().put("__array", org.json.JSONArray(body)) else JSONObject(body)
-                401, 402, 403 -> {
-                    block(BLOCKED_BACKOFF_MS)
-                    throw IllegalStateException("Watchmode rejected the key")
+        for (key in keys) {
+            if ((keyBlockedUntil[key] ?: 0L) > System.currentTimeMillis()) continue
+            val request = Request.Builder()
+                .url(url)
+                .header("X-API-Key", key)
+                .header("Accept", "application/json")
+                .build()
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                when (response.code) {
+                    200 -> return if (body.trimStart().startsWith("[")) {
+                        JSONObject().put("__array", org.json.JSONArray(body))
+                    } else {
+                        JSONObject(body)
+                    }
+                    404 -> return JSONObject()
+                    401, 402, 403 -> blockKey(key, BLOCKED_BACKOFF_MS)
+                    429 -> {
+                        // Monthly quota used up, or just too many requests this minute
+                        val quota = response.header("X-Account-Quota")?.toLongOrNull()
+                        val used = response.header("X-Account-Quota-Used")?.toLongOrNull()
+                        blockKey(key, if (quota != null && used != null && used >= quota) BLOCKED_BACKOFF_MS else SHORT_BACKOFF_MS)
+                    }
+                    else -> throw IllegalStateException("Watchmode error ${response.code}")
                 }
-                429 -> {
-                    // Monthly quota used up, or just too many requests this minute
-                    val quota = response.header("X-Account-Quota")?.toLongOrNull()
-                    val used = response.header("X-Account-Quota-Used")?.toLongOrNull()
-                    block(if (quota != null && used != null && used >= quota) BLOCKED_BACKOFF_MS else SHORT_BACKOFF_MS)
-                    throw IllegalStateException("Watchmode limit reached")
-                }
-                404 -> JSONObject()
-                else -> throw IllegalStateException("Watchmode error ${response.code}")
             }
         }
+        throw IllegalStateException("No Watchmode key is usable right now")
     }
 
-    private fun block(durationMs: Long) {
-        unavailableUntil = maxOf(unavailableUntil, System.currentTimeMillis() + durationMs)
+    private fun blockKey(key: String, durationMs: Long) {
+        keyBlockedUntil[key] = System.currentTimeMillis() + durationMs
     }
 
     private fun readCache(key: String): String? {

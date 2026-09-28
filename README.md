@@ -187,6 +187,8 @@ The single-field and combined movie sorts read popularity, actors and release da
 2. For local builds, add them to `secrets.properties` in the project root:
    ```properties
    WATCHMODE_API_KEY=your_watchmode_key
+   # Optional second Watchmode key, used when the first reaches its monthly quota
+   WATCHMODE_API_KEY2=your_second_watchmode_key
    OMDB_API_KEY=your_omdb_key
    # Optional extra OMDb keys, used in turn when one reaches its daily limit
    OMDB_API_KEY2=your_second_omdb_key
@@ -196,7 +198,7 @@ The single-field and combined movie sorts read popularity, actors and release da
 
 Watchmode's free plan has a monthly quota: each movie costs 2 credits (Famous Actors a few more; actors are cached). Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
 
-OMDb allows 1000 requests a day per key. To save them, only the award sorts (Most Awards, Best Overall) use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device for 30 days. If OMDb can't be reached, the small relay server in [`relay/`](relay/README.md) can forward its requests from a VPS outside Iran (with `RELAY_URL` and `RELAY_TOKEN` set, the OMDb keys stay on the server).
+OMDb allows 1000 requests a day per key. To save them, only the award sorts (Most Awards, Best Overall) use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device for 30 days.
 
 ### Fixing Gradle Wrapper Issues
 

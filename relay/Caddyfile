@@ -1,5 +1,0 @@
-# Caddy gets and renews the HTTPS certificate for RELAY_DOMAIN automatically
-{$RELAY_DOMAIN} {
-	encode gzip
-	reverse_proxy relay:8080
-}
