@@ -4,7 +4,6 @@ import com.pira.ccloud.data.model.Country
 import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.repository.RankedMovieRepository.MovieFacts
-import com.pira.ccloud.data.repository.TmdbClient.toInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -19,20 +18,16 @@ class MovieRankingTest {
         country = listOf(Country(1, country, ""))
     )
 
-    private fun tmdb(
-        popularity: Double = 10.0,
-        votes: Int = 1000,
-        cast: Double = 10.0,
+    // Watchmode data: percentiles (0..100); actors only when asked
+    private fun info(
+        popularity: Double = 50.0,
+        relevance: Double = 50.0,
+        cast: Double? = null,
         releaseDate: String = "",
-        language: String = "en",
-        countries: List<String> = listOf("US")
-    ) = TmdbClient.TmdbMovie(popularity, votes, 7.0, cast, releaseDate, "tt0000001", language, countries).toInfo()
-
-    // Watchmode gives percentiles instead of counts, and no actors unless asked
-    private fun watchmode(popularityPercentile: Double, relevancePercentile: Double, cast: Double? = null) = MovieInfo(
-        popularity = popularityPercentile / 100, reach = relevancePercentile / 100, ratingConfidence = relevancePercentile / 100,
-        castPopularity = cast, releaseDate = "", imdbId = "", originalLanguage = "en", originCountries = emptyList(),
-        source = MovieInfo.Source.WATCHMODE
+        language: String = "en"
+    ) = MovieInfo(
+        popularity = popularity / 100, reach = relevance / 100, ratingConfidence = relevance / 100,
+        castPopularity = cast, releaseDate = releaseDate, imdbId = "tt0000001", originalLanguage = language
     )
 
     private fun ranked(filterType: FilterType, vararg facts: MovieFacts): List<Int> =
@@ -61,10 +56,10 @@ class MovieRankingTest {
     }
 
     @Test
-    fun topRatedDistrustsScoresWithFewVotes() {
-        val fewVotes = MovieFacts(movie(1, 9.1, 2025), tmdb(votes = 25), null)
-        val manyVotes = MovieFacts(movie(2, 8.3, 2023), tmdb(votes = 9000), null)
-        assertEquals(listOf(2, 1), ranked(FilterType.TOP_RATED, fewVotes, manyVotes))
+    fun topRatedDistrustsScoresOfLittleKnownMovies() {
+        val obscure = MovieFacts(movie(1, 9.1, 2025), info(relevance = 15.0), null)
+        val wellKnown = MovieFacts(movie(2, 8.3, 2023), info(relevance = 98.0), null)
+        assertEquals(listOf(2, 1), ranked(FilterType.TOP_RATED, obscure, wellKnown))
     }
 
     @Test
@@ -77,8 +72,8 @@ class MovieRankingTest {
 
     @Test
     fun singleFieldSortsRankByTheirField() {
-        val popular = MovieFacts(movie(1, 7.0, 2025), tmdb(popularity = 400.0, cast = 5.0, releaseDate = "2025-01-10"), null)
-        val starCast = MovieFacts(movie(2, 7.0, 2024), tmdb(popularity = 20.0, cast = 70.0, releaseDate = "2025-06-01"), null)
+        val popular = MovieFacts(movie(1, 7.0, 2025), info(popularity = 99.0, cast = 0.1, releaseDate = "2025-01-10"), null)
+        val starCast = MovieFacts(movie(2, 7.0, 2024), info(popularity = 40.0, cast = 0.95, releaseDate = "2025-06-01"), null)
         assertEquals(listOf(1, 2), ranked(FilterType.MOST_POPULAR, popular, starCast))
         assertEquals(listOf(2, 1), ranked(FilterType.STAR_CAST, popular, starCast))
         assertEquals(listOf(2, 1), ranked(FilterType.NEWEST, popular, starCast))
@@ -86,7 +81,7 @@ class MovieRankingTest {
 
     @Test
     fun missingDataRanksLast() {
-        val known = MovieFacts(movie(1, 6.0, 2020), tmdb(popularity = 1.0), OmdbClient.parseAwards("N/A"))
+        val known = MovieFacts(movie(1, 6.0, 2020), info(popularity = 1.0, cast = 0.01), OmdbClient.parseAwards("N/A"))
         val unknown = MovieFacts(movie(2, 9.0, 2025), null, null)
         for (filterType in listOf(FilterType.MOST_POPULAR, FilterType.STAR_CAST, FilterType.MOST_AWARDED, FilterType.POPULAR_CAST)) {
             assertEquals(filterType.name, listOf(1, 2), ranked(filterType, known, unknown))
@@ -96,8 +91,8 @@ class MovieRankingTest {
     @Test
     fun bestOverallWeighsRecencyAboveThePopularity() {
         // Same rating, cast and awards: a new, less popular movie beats an old, very popular one
-        val newer = MovieFacts(movie(1, 8.0, currentYear), tmdb(popularity = 5.0), null)
-        val older = MovieFacts(movie(2, 8.0, currentYear - 30), tmdb(popularity = 300.0), null)
+        val newer = MovieFacts(movie(1, 8.0, currentYear), info(popularity = 10.0), null)
+        val older = MovieFacts(movie(2, 8.0, currentYear - 30), info(popularity = 100.0), null)
         assertEquals(listOf(1, 2), ranked(FilterType.BEST_OVERALL, newer, older))
     }
 
@@ -108,22 +103,16 @@ class MovieRankingTest {
         }
         // Server sorts keep them
         assertTrue(MovieRanking.isCandidate(movie(1, 8.0, 2024, "India"), FilterType.BY_IMDB))
-        assertTrue(MovieRanking.isExcludedOrigin(tmdb(language = "hi", countries = listOf("IN"))))
-        assertTrue(MovieRanking.isExcludedOrigin(tmdb(language = "en", countries = listOf("TR"))))
-        assertFalse(MovieRanking.isExcludedOrigin(tmdb()))
-        assertTrue(MovieRanking.isExcludedOrigin(watchmode(90.0, 90.0).copy(originalLanguage = "tr")))
+        assertTrue(MovieRanking.isExcludedOrigin(info(language = "hi")))
+        assertTrue(MovieRanking.isExcludedOrigin(info(language = "tr")))
+        assertFalse(MovieRanking.isExcludedOrigin(info()))
     }
 
     @Test
-    fun watchmodeDataRanksLikeTmdbData() {
-        val wellKnown = MovieFacts(movie(1, 8.3, 2023), watchmode(popularityPercentile = 95.0, relevancePercentile = 98.0), null)
-        val obscure = MovieFacts(movie(2, 9.1, 2025), watchmode(popularityPercentile = 20.0, relevancePercentile = 15.0), null)
-        assertEquals(listOf(1, 2), ranked(FilterType.MOST_POPULAR, wellKnown, obscure))
-        // The obscure 9.1 is pulled towards the average, like a TMDB score with few votes
-        assertEquals(listOf(1, 2), ranked(FilterType.TOP_RATED, wellKnown, obscure))
-        // Without actor data Famous Actors can't rank; with it, it can
-        assertEquals(-1.0, MovieRanking.score(FilterType.STAR_CAST, wellKnown, currentYear), 0.0)
-        val starCast = MovieFacts(movie(3, 7.0, 2024), watchmode(50.0, 50.0, cast = 0.9), null)
-        assertTrue(MovieRanking.score(FilterType.STAR_CAST, starCast, currentYear) > 0.8)
+    fun famousActorsNeedsActorData() {
+        val noActors = MovieFacts(movie(1, 8.0, 2024), info(), null)
+        val starCast = MovieFacts(movie(2, 7.0, 2024), info(cast = 0.9), null)
+        assertEquals(-1.0, MovieRanking.score(FilterType.STAR_CAST, noActors, currentYear), 0.0)
+        assertEquals(listOf(2, 1), ranked(FilterType.STAR_CAST, noActors, starCast))
     }
 }

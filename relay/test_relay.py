@@ -1,4 +1,4 @@
-"""Runs the relay against fake TMDB and OMDb servers: python3 -m unittest test_relay.py"""
+"""Runs the relay against a fake OMDb server: python3 -m unittest test_relay.py"""
 
 import importlib
 import json
@@ -20,12 +20,6 @@ class FakeUpstream(BaseHTTPRequestHandler):
         url = urllib.parse.urlsplit(self.path)
         query = dict(urllib.parse.parse_qsl(url.query))
         upstream_calls.append((url.path, query))
-        if url.path.startswith("/tmdb/"):
-            if query.get("api_key") != "tmdb-key":
-                return self.reply(401, {"status_message": "Invalid API key: tmdb-key-details"})
-            if url.path == "/tmdb/movie/404":
-                return self.reply(404, {"status_message": "not found"})
-            return self.reply(200, {"path": url.path, "query": query.get("query")})
         # OMDb: the first key is over its daily limit, the second works
         if query.get("apikey") == "omdb-1":
             return self.reply(401, {"Response": "False", "Error": "Request limit reached!"})
@@ -54,9 +48,7 @@ class RelayTest(unittest.TestCase):
         upstream = serve(FakeUpstream)
         base = f"http://127.0.0.1:{upstream.server_port}"
         os.environ.update({
-            "TMDB_BASE": base + "/tmdb",
             "OMDB_BASE": base + "/omdb/",
-            "TMDB_API_KEY": "tmdb-key",
             "OMDB_API_KEY": "omdb-1",
             "OMDB_API_KEY2": "omdb-2",
             "RELAY_TOKEN": "app-token",
@@ -82,24 +74,6 @@ class RelayTest(unittest.TestCase):
         except urllib.error.HTTPError as e:
             return e.code, json.loads(e.read())
 
-    def test_forwards_tmdb_with_the_relay_key_and_caches(self):
-        status, body = self.get("/tmdb/search/movie?query=Dune&year=2021&api_key=client-key")
-        self.assertEqual(200, status)
-        self.assertEqual("Dune", body["query"])
-        self.assertEqual("tmdb-key", upstream_calls[0][1]["api_key"])
-        # The same lookup again comes from the cache
-        self.assertEqual(200, self.get("/tmdb/search/movie?year=2021&query=Dune")[0])
-        self.assertEqual(1, len(upstream_calls))
-
-    def test_only_the_apps_tmdb_endpoints(self):
-        self.assertEqual(404, self.get("/tmdb/account")[0])
-        self.assertEqual(404, self.get("/tmdb/movie/1/account_states")[0])
-        self.assertEqual(200, self.get("/tmdb/movie/603?append_to_response=credits")[0])
-        self.assertEqual(404, self.get("/tmdb/movie/404")[0])
-        self.assertEqual(404, self.get("/tmdb/movie/404")[0])
-        # 404 answers are cached too
-        self.assertEqual(2, len(upstream_calls))
-
     def test_omdb_moves_to_the_next_key_at_the_limit(self):
         status, body = self.get("/omdb/?i=tt0133093")
         self.assertEqual(200, status)
@@ -116,8 +90,8 @@ class RelayTest(unittest.TestCase):
         self.assertEqual([], upstream_calls)
 
     def test_needs_the_app_token(self):
-        self.assertEqual(403, self.get("/tmdb/search/movie?query=x", token=None)[0])
-        self.assertEqual(403, self.get("/tmdb/search/movie?query=x", token="wrong")[0])
+        self.assertEqual(403, self.get("/omdb/?i=tt0133093", token=None)[0])
+        self.assertEqual(403, self.get("/omdb/?i=tt0133093", token="wrong")[0])
         self.assertEqual(200, self.get("/health", token=None)[0])
 
     def test_rate_limits_each_ip(self):
@@ -125,22 +99,12 @@ class RelayTest(unittest.TestCase):
         old = limiter.per_minute
         limiter.per_minute = 2
         try:
-            self.assertEqual(200, self.get("/tmdb/movie/1", ip="10.0.0.9")[0])
-            self.assertEqual(200, self.get("/tmdb/movie/1", ip="10.0.0.9")[0])
-            self.assertEqual(429, self.get("/tmdb/movie/1", ip="10.0.0.9")[0])
-            self.assertEqual(200, self.get("/tmdb/movie/1", ip="10.0.0.8")[0])
+            self.assertEqual(200, self.get("/omdb/?i=tt0133093", ip="10.0.0.9")[0])
+            self.assertEqual(200, self.get("/omdb/?i=tt0133093", ip="10.0.0.9")[0])
+            self.assertEqual(429, self.get("/omdb/?i=tt0133093", ip="10.0.0.9")[0])
+            self.assertEqual(200, self.get("/omdb/?i=tt0133093", ip="10.0.0.8")[0])
         finally:
             limiter.per_minute = old
-
-    def test_hides_upstream_key_errors(self):
-        old = self.relay.TMDB_API_KEY
-        self.relay.TMDB_API_KEY = "wrong-key"
-        try:
-            status, body = self.get("/tmdb/movie/77")
-            self.assertEqual(502, status)
-            self.assertNotIn("tmdb-key", json.dumps(body))
-        finally:
-            self.relay.TMDB_API_KEY = old
 
 
 if __name__ == "__main__":

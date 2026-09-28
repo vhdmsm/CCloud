@@ -14,9 +14,9 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
- * Movie data from Watchmode (https://api.watchmode.com), used instead of TMDB when TMDB can't be
- * reached (e.g. from Iran). The free plan has a small monthly quota (each request costs a credit),
- * so answers are kept on the device for 30 days, the longest the free plan's terms allow.
+ * Movie data from Watchmode (https://api.watchmode.com): popularity, how well known a movie and
+ * its actors are, release dates and IMDb ids. The free plan has a small monthly quota (each request
+ * costs a credit), so answers are kept on the device for 30 days, the longest its terms allow.
  */
 object WatchmodeClient {
     private const val BASE_URL = "https://api.watchmode.com/v1"
@@ -134,9 +134,7 @@ object WatchmodeClient {
             castPopularity = if (stored.has("cast_popularity")) stored.getDouble("cast_popularity") else null,
             releaseDate = stored.optString("release_date"),
             imdbId = stored.optString("imdb_id"),
-            originalLanguage = stored.optString("original_language"),
-            originCountries = emptyList(),
-            source = MovieInfo.Source.WATCHMODE
+            originalLanguage = stored.optString("original_language")
         )
     }
 

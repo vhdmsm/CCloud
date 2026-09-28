@@ -62,17 +62,17 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 ### 🔎 Movie Filters
 - **Server sorts**: Default, by year, or by IMDB score, combined with a genre
 - **Single-field sorts**:
-  - **Most Popular**: current popularity on TMDB
+  - **Most Popular**: current popularity
   - **Top Rated**: IMDB score, trusted more when many people voted (a 9.0 from a few votes doesn't beat an 8.3 from thousands)
-  - **Famous Actors**: popularity of the five lead actors on TMDB
+  - **Famous Actors**: popularity of the three lead actors
   - **Most Awards**: Oscar wins and nominations and other awards, from OMDb
-  - **Newest Release Date**: exact release date from TMDB
+  - **Newest Release Date**: exact release date
 - **Combined sorts**:
   - **Top Picks (Rating + Year)**: IMDB score with a bonus for newer releases (movies rated 6.5 or higher)
-  - **Popular + Actors**: TMDB popularity, number of votes and lead actors
+  - **Popular + Actors**: popularity, how widely known the movie is, and lead actors
   - **Best Overall (All)**: rating (35%), release year (25%), actors (15%), awards (15%) and popularity (10%) together
 - Indian and Turkish movies are left out of the single-field and combined sorts
-- Movie data comes from TMDB; when TMDB can't be reached (e.g. from Iran), from Watchmode instead
+- Movie data (popularity, actors, release dates) comes from Watchmode, awards from OMDb
 
 ### ❤️ Favorites Management
 - **Save Content**: Add movies and series to your favorites list
@@ -179,14 +179,14 @@ Downloading English subtitles from OpenSubtitles needs an API key. Without one t
 
 No user login is needed: without one, OpenSubtitles allows a few downloads per day for each user's IP address.
 
-### TMDB and OMDb API Keys
+### Watchmode and OMDb API Keys
 
-The single-field and combined movie sorts read popularity, votes, actors and release dates from [TMDB](https://www.themoviedb.org), and awards from [OMDb](https://www.omdbapi.com). Without the keys the app works normally; only the sorts that need them are hidden.
+The single-field and combined movie sorts read popularity, actors and release dates from [Watchmode](https://api.watchmode.com) (which works from Iran), and awards from [OMDb](https://www.omdbapi.com). Without the keys the app works normally; only the sorts that need them are hidden.
 
-1. Get a free TMDB key on the [TMDB API settings page](https://www.themoviedb.org/settings/api) (the API key or the API read access token works), and a free OMDb key on the [OMDb API key page](https://www.omdbapi.com/apikey.aspx).
+1. Get a free Watchmode key on the [Watchmode API page](https://api.watchmode.com/requestApiKey/), and a free OMDb key on the [OMDb API key page](https://www.omdbapi.com/apikey.aspx).
 2. For local builds, add them to `secrets.properties` in the project root:
    ```properties
-   TMDB_API_KEY=your_tmdb_key
+   WATCHMODE_API_KEY=your_watchmode_key
    OMDB_API_KEY=your_omdb_key
    # Optional extra OMDb keys, used in turn when one reaches its daily limit
    OMDB_API_KEY2=your_second_omdb_key
@@ -194,9 +194,9 @@ The single-field and combined movie sorts read popularity, votes, actors and rel
    ```
 3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
 
-TMDB can't be reached from Iran. For a personal build, the simplest fix is a free [Watchmode](https://api.watchmode.com) key as `WATCHMODE_API_KEY`: the app uses it only when TMDB can't be reached. Its free plan has a small monthly quota, so answers are kept on the device for 30 days (the longest its free plan allows), and Famous Actors costs extra credits (a few per movie, actors are cached). For a build shared with others, run the small relay server in [`relay/`](relay/README.md) on a VPS outside Iran and add the `RELAY_URL` and `RELAY_TOKEN` secrets: the app then sends TMDB and OMDb requests through it, and the keys stay on the server instead of in the app.
+Watchmode's free plan has a monthly quota: each movie costs 2 credits (Famous Actors a few more; actors are cached). Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
 
-Each OMDb key allows 1000 requests a day, shared by everyone using the build. To save them, only the award sorts (Most Awards, Best Overall) use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device for 30 days.
+OMDb allows 1000 requests a day per key. To save them, only the award sorts (Most Awards, Best Overall) use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device for 30 days. If OMDb can't be reached, the small relay server in [`relay/`](relay/README.md) can forward its requests from a VPS outside Iran (with `RELAY_URL` and `RELAY_TOKEN` set, the OMDb keys stay on the server).
 
 ### Fixing Gradle Wrapper Issues
 

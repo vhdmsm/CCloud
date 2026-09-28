@@ -12,7 +12,6 @@ import com.pira.ccloud.data.repository.GenreRepository
 import com.pira.ccloud.data.repository.MovieRepository
 import com.pira.ccloud.data.repository.OmdbClient
 import com.pira.ccloud.data.repository.RankedMovieRepository
-import com.pira.ccloud.data.repository.TmdbClient
 import com.pira.ccloud.data.repository.WatchmodeClient
 import com.pira.ccloud.utils.LanguageUtils
 import kotlinx.coroutines.CancellationException
@@ -61,7 +60,7 @@ class MoviesViewModel : ViewModel() {
     
     // Sorts whose data source isn't set up in the build are left out
     val filterTypes: List<FilterType> = FilterType.entries.filter {
-        (!it.needsMovieData || TmdbClient.isConfigured || WatchmodeClient.isConfigured) &&
+        (!it.needsMovieData || WatchmodeClient.isConfigured) &&
             (!it.needsOmdb || OmdbClient.isConfigured)
     }
     

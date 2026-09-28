@@ -4,8 +4,8 @@ import com.pira.ccloud.BuildConfig
 import okhttp3.Request
 
 /**
- * The app's own relay server (see relay/ in the repository), used when TMDB or OMDb can't be
- * reached directly (e.g. from Iran). With a relay the API keys stay on the server.
+ * The app's own relay server (see relay/ in the repository) for OMDb, for when it can't be
+ * reached directly. With a relay the OMDb keys stay on the server.
  */
 object ApiRelay {
     val url: String get() = BuildConfig.RELAY_URL.trimEnd('/')

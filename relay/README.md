@@ -1,10 +1,10 @@
 # CCloud API Relay
 
-TMDB (and sometimes OMDb) can't be reached from Iran. This small server runs on a VPS outside Iran and forwards the app's requests to them:
+If OMDb can't be reached (e.g. from Iran), this small server runs on a VPS outside Iran and forwards the app's OMDb requests:
 
-- The TMDB and OMDb keys stay on the server; the app only knows the relay's address
-- Only the endpoints the app uses are forwarded (movie search, movie details, OMDb lookup by IMDb id)
-- Answers are cached (TMDB for a day, OMDb for 30 days), shared by all users, which saves OMDb's daily limit
+- The OMDb keys stay on the server; the app only knows the relay's address
+- Only lookups by IMDb id are forwarded
+- Answers are cached for 30 days, shared by all users, which saves OMDb's daily limit
 - OMDb keys are used in turn when one reaches its daily limit
 - Each user (IP) is limited to 120 requests a minute
 
@@ -19,7 +19,7 @@ You need a VPS outside Iran with Docker, and a domain (or subdomain) for the rel
    ```sh
    cp .env.example .env
    openssl rand -hex 16   # use the output as RELAY_TOKEN
-   nano .env              # fill in RELAY_DOMAIN, RELAY_TOKEN and the API keys
+   nano .env              # fill in RELAY_DOMAIN, RELAY_TOKEN and the OMDb keys
    ```
 4. **Start**:
    ```sh
@@ -30,7 +30,7 @@ You need a VPS outside Iran with Docker, and a domain (or subdomain) for the rel
    - `RELAY_URL`: `https://api.example.com`
    - `RELAY_TOKEN`: the same token as in `.env`
 
-   Builds made after that send TMDB and OMDb requests through the relay and no longer contain those API keys.
+   Builds made after that send OMDb requests through the relay and no longer contain the OMDb keys.
 
 Logs: `docker compose logs -f relay`. Update after changes: `docker compose up -d --build`.
 

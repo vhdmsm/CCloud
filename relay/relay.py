@@ -1,9 +1,9 @@
 """
-CCloud API relay: forwards the app's TMDB and OMDb requests from a server outside Iran.
+CCloud API relay: forwards the app's OMDb requests from a server outside Iran.
 
-The API keys live here (environment variables), not in the app. Only the few endpoints the app
-uses are forwarded, answers are cached in SQLite so repeated lookups (from any user) cost no
-upstream request, and each client IP is rate limited.
+The API keys live here (environment variables), not in the app. Only lookups by IMDb id are
+forwarded, answers are cached in SQLite so repeated lookups (from any user) cost no upstream
+request, OMDb keys are used in turn, and each client IP is rate limited.
 """
 
 import json
@@ -17,9 +17,7 @@ import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-TMDB_BASE = os.environ.get("TMDB_BASE", "https://api.themoviedb.org/3")
 OMDB_BASE = os.environ.get("OMDB_BASE", "https://www.omdbapi.com/")
-TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
 OMDB_API_KEYS = [k for k in (os.environ.get(n, "") for n in ("OMDB_API_KEY", "OMDB_API_KEY2", "OMDB_API_KEY3")) if k]
 # Optional shared token the app sends in X-App-Token; keeps random scanners out
 RELAY_TOKEN = os.environ.get("RELAY_TOKEN", "")
@@ -29,16 +27,11 @@ PORT = int(os.environ.get("PORT", "8080"))
 RATE_LIMIT = int(os.environ.get("RATE_LIMIT_PER_MINUTE", "120"))
 
 DAY = 24 * 60 * 60
-TMDB_TTL = DAY
 OMDB_TTL = 30 * DAY
-NOT_FOUND_TTL = DAY
 # A key over its daily limit is tried again after this
 OMDB_KEY_BACKOFF = 3 * 60 * 60
 UPSTREAM_TIMEOUT = 15
 
-# Only what the app asks for: movie search and movie details (with credits)
-TMDB_PATHS = [re.compile(r"^search/movie$"), re.compile(r"^movie/\d+$")]
-TMDB_PARAMS = {"query", "year", "include_adult", "append_to_response", "language", "page"}
 IMDB_ID = re.compile(r"^tt\d{5,10}$")
 
 
@@ -97,42 +90,13 @@ omdb_blocked_until = {}
 omdb_lock = threading.Lock()
 
 
-def fetch(url, headers=None):
-    request = urllib.request.Request(url, headers={"Accept": "application/json", **(headers or {})})
+def fetch(url):
+    request = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
         with urllib.request.urlopen(request, timeout=UPSTREAM_TIMEOUT) as response:
             return response.status, response.read()
     except urllib.error.HTTPError as error:
         return error.code, error.read()
-
-
-def tmdb(path, query):
-    if not TMDB_API_KEY:
-        return 503, {"status_message": "TMDB is not configured on the relay"}
-    if not any(p.match(path) for p in TMDB_PATHS):
-        return 404, {"status_message": "Not available through the relay"}
-    params = sorted((k, v) for k, v in query if k in TMDB_PARAMS)
-    key = "tmdb:" + path + "?" + urllib.parse.urlencode(params)
-    cached = cache.get(key)
-    if cached:
-        return cached
-
-    headers = {}
-    # A v4 read access token (a JWT) goes in the header, a v3 key in the URL
-    if TMDB_API_KEY.startswith("eyJ"):
-        headers["Authorization"] = "Bearer " + TMDB_API_KEY
-        upstream_params = params
-    else:
-        upstream_params = params + [("api_key", TMDB_API_KEY)]
-    status, body = fetch(f"{TMDB_BASE}/{path}?{urllib.parse.urlencode(upstream_params)}", headers)
-    if status == 200:
-        cache.put(key, status, body, TMDB_TTL)
-    elif status == 404:
-        cache.put(key, status, body, NOT_FOUND_TTL)
-    elif status == 401:
-        # Don't pass on the upstream message, it would describe the relay's key
-        return 502, {"status_message": "The relay's TMDB key was rejected"}
-    return status, body
 
 
 def omdb(query):
@@ -180,9 +144,7 @@ class Handler(BaseHTTPRequestHandler):
 
         query = urllib.parse.parse_qsl(url.query)
         try:
-            if url.path.startswith("/tmdb/"):
-                status, body = tmdb(url.path[len("/tmdb/"):], query)
-            elif url.path in ("/omdb", "/omdb/"):
+            if url.path in ("/omdb", "/omdb/"):
                 status, body = omdb(query)
             else:
                 status, body = 404, {"error": "Not found"}
@@ -214,7 +176,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     global cache
     cache = Cache(CACHE_PATH)
-    print(f"CCloud relay on :{PORT} (TMDB {'on' if TMDB_API_KEY else 'off'}, {len(OMDB_API_KEYS)} OMDb keys)", flush=True)
+    print(f"CCloud relay on :{PORT} ({len(OMDB_API_KEYS)} OMDb keys)", flush=True)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 
 
