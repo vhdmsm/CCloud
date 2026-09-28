@@ -76,8 +76,8 @@ fun MovieScoresSection(movie: Movie, modifier: Modifier = Modifier) {
             ScoreRow(
                 "Best Overall",
                 format(
-                    "%.2f = rating %.2f + year %.2f + actors %.2f + awards %.2f + popularity %.2f",
-                    parts.total, parts.rating, parts.recency, parts.actors, parts.awards, parts.popularity
+                    "%.2f = rating %.2f + awards %.2f + popularity %.2f + actors %.2f",
+                    parts.total, parts.rating, parts.awards, parts.popularity, parts.actors
                 )
             )
             if (data.incomplete) {
