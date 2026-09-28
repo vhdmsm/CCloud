@@ -70,7 +70,7 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Combined sorts**:
   - **Top Picks (Rating + Year)**: IMDB score with a bonus for newer releases (movies rated 6.5 or higher)
   - **Popular + Actors**: TMDB popularity, number of votes and lead actors
-  - **Best Overall (All)**: rating, popularity, actors, awards and release year together
+  - **Best Overall (All)**: rating (35%), release year (25%), actors (15%), awards (15%) and popularity (10%) together
 - Indian and Turkish movies are left out of the single-field and combined sorts
 
 ### ❤️ Favorites Management
@@ -187,8 +187,9 @@ The single-field and combined movie sorts read popularity, votes, actors and rel
    ```properties
    TMDB_API_KEY=your_tmdb_key
    OMDB_API_KEY=your_omdb_key
-   # Optional second OMDb key, used when the first reaches its daily limit
+   # Optional extra OMDb keys, used in turn when one reaches its daily limit
    OMDB_API_KEY2=your_second_omdb_key
+   OMDB_API_KEY3=your_third_omdb_key
    ```
 3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
 

@@ -87,6 +87,7 @@ jobs:
           echo "TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}" >> secrets.properties
           echo "OMDB_API_KEY=${{ secrets.OMDB_API_KEY }}" >> secrets.properties
           echo "OMDB_API_KEY2=${{ secrets.OMDB_API_KEY2 }}" >> secrets.properties
+          echo "OMDB_API_KEY3=${{ secrets.OMDB_API_KEY3 }}" >> secrets.properties
         continue-on-error: true
 
       - name: Build APK

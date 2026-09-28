@@ -51,6 +51,11 @@ android {
             "OMDB_API_KEY2",
             "\"${secretsProperties.getProperty("OMDB_API_KEY2", "")}\""
         )
+        buildConfigField(
+            "String",
+            "OMDB_API_KEY3",
+            "\"${secretsProperties.getProperty("OMDB_API_KEY3", "")}\""
+        )
         
         // Add memory management options
         multiDexEnabled = true
