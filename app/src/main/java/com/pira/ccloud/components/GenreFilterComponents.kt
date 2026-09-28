@@ -38,7 +38,8 @@ fun GenreFilterSection(
     selectedGenreId: Int,
     selectedFilterType: FilterType,
     onGenreSelected: (Int) -> Unit,
-    onFilterTypeSelected: (FilterType) -> Unit
+    onFilterTypeSelected: (FilterType) -> Unit,
+    filterTypes: List<FilterType> = listOf(FilterType.DEFAULT, FilterType.BY_YEAR, FilterType.BY_IMDB)
 ) {
     Column(
         modifier = Modifier
@@ -62,7 +63,8 @@ fun GenreFilterSection(
             // Filter type selector on the left
             FilterTypeSelector(
                 selectedFilterType = selectedFilterType,
-                onFilterTypeSelected = onFilterTypeSelected
+                onFilterTypeSelected = onFilterTypeSelected,
+                filterTypes = filterTypes
             )
             
             // Genre selector on the right
@@ -78,7 +80,8 @@ fun GenreFilterSection(
 @Composable
 fun FilterTypeSelector(
     selectedFilterType: FilterType,
-    onFilterTypeSelected: (FilterType) -> Unit
+    onFilterTypeSelected: (FilterType) -> Unit,
+    filterTypes: List<FilterType> = listOf(FilterType.DEFAULT, FilterType.BY_YEAR, FilterType.BY_IMDB)
 ) {
     var expanded by remember { mutableStateOf(false) }
     
@@ -107,6 +110,8 @@ fun FilterTypeSelector(
                         FilterType.DEFAULT -> "Sort: Default"
                         FilterType.BY_YEAR -> "Sort: By Year"
                         FilterType.BY_IMDB -> "Sort: By IMDB"
+                        FilterType.TOP_PICKS -> "Sort: Top Picks"
+                        FilterType.POPULAR -> "Sort: Popular"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimary,
@@ -124,30 +129,26 @@ fun FilterTypeSelector(
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text("Default") },
-                    onClick = {
-                        onFilterTypeSelected(FilterType.DEFAULT)
-                        expanded = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("By Year") },
-                    onClick = {
-                        onFilterTypeSelected(FilterType.BY_YEAR)
-                        expanded = false
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("By IMDB") },
-                    onClick = {
-                        onFilterTypeSelected(FilterType.BY_IMDB)
-                        expanded = false
-                    }
-                )
+                filterTypes.forEach { filterType ->
+                    DropdownMenuItem(
+                        text = { Text(filterTypeMenuLabel(filterType)) },
+                        onClick = {
+                            onFilterTypeSelected(filterType)
+                            expanded = false
+                        }
+                    )
+                }
             }
         }
     }
+}
+
+private fun filterTypeMenuLabel(filterType: FilterType): String = when (filterType) {
+    FilterType.DEFAULT -> "Default"
+    FilterType.BY_YEAR -> "By Year"
+    FilterType.BY_IMDB -> "By IMDB"
+    FilterType.TOP_PICKS -> "Top Picks (IMDB + Year)"
+    FilterType.POPULAR -> "Popular (Web + Cast)"
 }
 
 @Composable

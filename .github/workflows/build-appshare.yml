@@ -79,10 +79,12 @@ jobs:
           echo "storeFile=keystore.jks" >> key.properties
         continue-on-error: true
 
-      # OpenSubtitles API key for online English subtitles; without it the feature is hidden
+      # API keys for online English subtitles (OpenSubtitles) and the Popular movie filter (TMDB);
+      # a feature whose key is missing is hidden
       - name: Create secrets properties file
         run: |
           echo "OPENSUBTITLES_API_KEY=${{ secrets.OPENSUBTITLES_API_KEY }}" > secrets.properties
+          echo "TMDB_API_KEY=${{ secrets.TMDB_API_KEY }}" >> secrets.properties
         continue-on-error: true
 
       - name: Build APK

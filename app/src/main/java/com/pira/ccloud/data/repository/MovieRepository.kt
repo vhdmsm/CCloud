@@ -34,7 +34,8 @@ class MovieRepository : BaseRepository() {
         return when (filterType) {
             FilterType.DEFAULT -> "$baseUrl/$genreId/created/$page/$API_KEY"
             FilterType.BY_YEAR -> "$baseUrl/$genreId/year/$page/$API_KEY"
-            FilterType.BY_IMDB -> "$baseUrl/$genreId/imdb/$page/$API_KEY"
+            // Top Picks and Popular are ranked by RankedMovieRepository from the IMDB and year lists
+            FilterType.BY_IMDB, FilterType.TOP_PICKS, FilterType.POPULAR -> "$baseUrl/$genreId/imdb/$page/$API_KEY"
         }
     }
     

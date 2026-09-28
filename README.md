@@ -59,6 +59,11 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Dynamic Subtitles**: Show Persian, English, both at the same time, or no subtitles, using the subtitle tracks inside the video file
 - **Online English Subtitles**: Download English subtitles from OpenSubtitles for videos that don't have them, with timing correction
 
+### 🔎 Movie Filters
+- **Sort Options**: Default, by year, or by IMDB score, combined with a genre
+- **Top Picks (IMDB + Year)**: Good movies first, ranked by IMDB score with a bonus for newer releases (only movies rated 6.5 or higher)
+- **Popular (Web + Cast)**: Movies ranked by their popularity on TMDB (recent interest and number of votes) and how well known their lead actors are
+
 ### ❤️ Favorites Management
 - **Save Content**: Add movies and series to your favorites list
 - **Quick Access**: Easily access your saved content from the Favorites screen
@@ -163,6 +168,17 @@ Downloading English subtitles from OpenSubtitles needs an API key. Without one t
 3. For release builds with GitHub Actions, add a repository secret named `OPENSUBTITLES_API_KEY` (Settings → Secrets and variables → Actions). The build workflow writes it to `secrets.properties`.
 
 No user login is needed: without one, OpenSubtitles allows a few downloads per day for each user's IP address.
+
+### TMDB API Key
+
+The **Popular (Web + Cast)** movie filter reads popularity and cast data from [TMDB](https://www.themoviedb.org). Without a key the app works normally; only that filter is hidden.
+
+1. Create a free account on [themoviedb.org](https://www.themoviedb.org) and request an API key on the [API settings page](https://www.themoviedb.org/settings/api). Either the API key or the API read access token works.
+2. For local builds, add it to `secrets.properties` in the project root:
+   ```properties
+   TMDB_API_KEY=your_api_key
+   ```
+3. For release builds with GitHub Actions, add a repository secret named `TMDB_API_KEY`. The build workflow writes it to `secrets.properties`.
 
 ### Fixing Gradle Wrapper Issues
 

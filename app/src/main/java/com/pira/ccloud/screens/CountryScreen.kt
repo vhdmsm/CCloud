@@ -169,7 +169,7 @@ fun CountryScreen(
                     text = when (selectedFilterType) {
                         FilterType.DEFAULT -> ""
                         FilterType.BY_YEAR -> "Sorted by Year"
-                        FilterType.BY_IMDB -> "Sorted by IMDB"
+                        FilterType.BY_IMDB, FilterType.TOP_PICKS, FilterType.POPULAR -> "Sorted by IMDB"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary

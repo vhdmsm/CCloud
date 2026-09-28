@@ -34,6 +34,12 @@ android {
             "OPENSUBTITLES_API_KEY",
             "\"${secretsProperties.getProperty("OPENSUBTITLES_API_KEY", "")}\""
         )
+        // TMDB API key (or read access token) for the Popular movie filter; empty hides that filter
+        buildConfigField(
+            "String",
+            "TMDB_API_KEY",
+            "\"${secretsProperties.getProperty("TMDB_API_KEY", "")}\""
+        )
         
         // Add memory management options
         multiDexEnabled = true
