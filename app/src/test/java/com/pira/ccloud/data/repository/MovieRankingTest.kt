@@ -168,4 +168,30 @@ class MovieRankingTest {
         assertEquals(0.1, WatchmodeClient.remainingShare(listOf(2500L to 2250L))!!, 0.001)
         assertNull(WatchmodeClient.remainingShare(listOf(null, null)))
     }
+
+    @Test
+    fun thisYearsMoviesSpreadTheAwardsShare() {
+        // Forgotten Island's real data: 2026, IMDB 7.9, popularity top 0.004%, actors 0.5, no awards yet
+        val thisYear = MovieFacts(movie(1, 7.9, currentYear), info(popularity = 99.996, relevance = 99.873, cast = 0.5), null)
+        val parts = MovieRanking.bestOverallParts(thisYear, currentYear)
+        assertTrue(parts.awardsSpread)
+        assertEquals(0.0, parts.awards, 1e-9)
+        assertEquals(0.45 * (7.9 - 5.0) / 4.0, parts.rating, 0.01)
+        // The same movie from last year gets no such help
+        val lastYear = MovieFacts(movie(2, 7.9, currentYear - 1), info(popularity = 99.996, relevance = 99.873, cast = 0.5), null)
+        assertFalse(MovieRanking.bestOverallParts(lastYear, currentYear).awardsSpread)
+        assertTrue(parts.total > MovieRanking.bestOverallScore(lastYear, currentYear))
+    }
+
+    @Test
+    fun anEarlyAwardNeverLowersThisYearsScore() {
+        val none = MovieFacts(movie(1, 7.5, currentYear), info(popularity = 99.0, cast = 0.3), null)
+        val oneNomination = none.copy(awards = OmdbClient.parseAwards("1 nomination"))
+        val bigWinner = none.copy(awards = OmdbClient.parseAwards("Won 3 Oscars. 60 wins & 150 nominations total"))
+        val scoreNone = MovieRanking.bestOverallScore(none, currentYear)
+        assertTrue(MovieRanking.bestOverallScore(oneNomination, currentYear) >= scoreNone)
+        // A big winner scores with the awards weighed in
+        assertFalse(MovieRanking.bestOverallParts(bigWinner, currentYear).awardsSpread)
+        assertTrue(MovieRanking.bestOverallScore(bigWinner, currentYear) > scoreNone)
+    }
 }

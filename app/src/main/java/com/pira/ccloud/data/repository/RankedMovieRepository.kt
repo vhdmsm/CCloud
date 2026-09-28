@@ -219,6 +219,10 @@ object MovieRanking {
      * 0..1 mix of rating (35%), awards (30%), popularity (25%) and cast (10%). Missing parts count as
      * zero. The release year isn't weighed: the list is read newest first, so the movies ranked
      * together are from about the same year already.
+     *
+     * This year's movies haven't had time to win awards, so they may spread the awards' share evenly
+     * over the rest instead: rating 45%, popularity 35%, cast 20%. Whichever is higher counts, so an
+     * early nomination never lowers the score.
      */
     fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
         bestOverallParts(facts, currentYear).total
@@ -228,7 +232,9 @@ object MovieRanking {
         val rating: Double,
         val awards: Double,
         val popularity: Double,
-        val actors: Double
+        val actors: Double,
+        // A movie of this year with the awards' share spread over the rest
+        val awardsSpread: Boolean = false
     ) {
         val total: Double get() = rating + awards + popularity + actors
     }
@@ -237,12 +243,23 @@ object MovieRanking {
         val info = facts.info
         // 5.0 -> 0, 9.0 -> 1
         val rating = ((weightedRating(facts.movie.imdb, info?.ratingConfidence ?: 0.0) - 5.0) / 4.0).coerceIn(0.0, 1.0)
-        return BestOverallParts(
+        val popularity = info?.popularity ?: 0.0
+        val actors = info?.castPopularity ?: 0.0
+        val withAwards = BestOverallParts(
             rating = 0.35 * rating,
             awards = 0.30 * (facts.awards?.let { awardsScore(it) } ?: 0.0),
-            popularity = 0.25 * (info?.popularity ?: 0.0),
-            actors = 0.10 * (info?.castPopularity ?: 0.0)
+            popularity = 0.25 * popularity,
+            actors = 0.10 * actors
         )
+        if (facts.movie.year < currentYear) return withAwards
+        val spread = BestOverallParts(
+            rating = 0.45 * rating,
+            awards = 0.0,
+            popularity = 0.35 * popularity,
+            actors = 0.20 * actors,
+            awardsSpread = true
+        )
+        return if (spread.total > withAwards.total) spread else withAwards
     }
 
     // "2024-03-01" -> 20240301; the year alone when the date is unknown
