@@ -73,7 +73,7 @@ object OmdbClient {
 
     /**
      * Awards and rating of the movie with this IMDb id ([year]: its release year, for how long the
-     * answer is kept); null when unknown. [cachedOnly]: no request. When OMDb can't answer (every key
+     * answer is kept); null when unknown. [cachedOnly]: only a fresh kept answer, no request. When OMDb can't answer (every key
      * at its daily limit, no connection) an older kept answer is used, so hitting a limit loses nothing.
      */
     suspend fun details(imdbId: String, year: Int, cachedOnly: Boolean = false): Details? = withContext(Dispatchers.IO) {
@@ -85,7 +85,9 @@ object OmdbClient {
         }
         memoryCache.remove(imdbId)
         val stale = cached?.let { parseDetails(it.second) }
-        if (cachedOnly || System.currentTimeMillis() < offlineUntil) return@withContext stale
+        // Only a kept answer that's still fresh counts as cached, so an old rating gets asked for again
+        if (cachedOnly) return@withContext null
+        if (System.currentTimeMillis() < offlineUntil) return@withContext stale
 
         for (key in keys) {
             if ((keyBlockedUntil[key] ?: 0L) > System.currentTimeMillis()) continue

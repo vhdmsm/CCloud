@@ -101,10 +101,42 @@ class RankedMovieRepositoryTest {
         val result = repo.getRankedMovies(0, 0, FilterType.MOST_POPULAR, emptySet()) { updates += it }
         // First shown by IMDB (no data yet), with the progress
         assertEquals(listOf(1, 2), updates.first().movies.map { it.id })
-        assertEquals("Getting movie data: 0 of 3…", updates.first().progress)
+        assertEquals("Getting data for 2026 movies: 1 of 3…", updates.first().progress)
         // Then by popularity once the data is in; the skipped movie is never asked about
         assertEquals(listOf(2, 1), result.movies.map { it.id })
         assertEquals(null, result.progress)
         assertEquals(setOf(1, 2), requested.toSet())
+    }
+
+    @Test
+    fun ranksThisYearFirstThenAddsLastYearsMoviesAsTheirDataComesIn() = runBlocking {
+        val pages = listOf(
+            listOf(movie(1, 2026), movie(2, 2026), movie(3, 2025)),
+            listOf(movie(4, 2025), movie(5, 2024))
+        )
+        val popularity = mapOf(1 to 0.3, 2 to 0.6, 3 to 0.9, 4 to 0.1)
+        val asked = mutableListOf<Int>()
+        val repo = RankedMovieRepository(
+            { page, _, _ -> pages.getOrElse(page) { emptyList() } },
+            { true },
+            { movie, _, cachedOnly ->
+                if (cachedOnly) {
+                    RankedMovieRepository.MovieFacts(movie, null, null)
+                } else {
+                    synchronized(asked) { asked += movie.id }
+                    RankedMovieRepository.MovieFacts(movie, MovieInfo(popularity.getValue(movie.id), 0.5, 0.5, null, "", "tt1", "en"), null)
+                }
+            }
+        )
+        val updates = mutableListOf<RankedMovieRepository.RankedPage>()
+        val result = repo.getRankedMovies(0, 0, FilterType.MOST_POPULAR, emptySet()) { updates += it }
+        // 2026 is shown (and asked about) before any 2025 movie
+        assertEquals(setOf(1, 2), updates.first().movies.map { it.id }.toSet())
+        assertEquals(listOf(1, 2), asked.take(2).sorted())
+        // While 2025 loads, its movies only show once their data is in
+        assertTrue(updates.all { update -> update.movies.map { it.id }.containsAll(listOf(1, 2)) })
+        // Then both years ranked together; 2024 waits for the next load
+        assertEquals(listOf(3, 2, 1, 4), result.movies.map { it.id })
+        assertEquals(0, result.lastPage)
     }
 }

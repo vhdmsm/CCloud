@@ -15,7 +15,6 @@ import kotlinx.coroutines.sync.withPermit
 import java.util.Calendar
 import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.ln
 import kotlin.math.log10
 
@@ -65,8 +64,9 @@ class RankedMovieRepository(
 
     /**
      * [handledIds]: movies earlier loads of this list already dealt with (shown or skipped).
-     * [onUpdate] gets the batch as soon as the server's pages are read (ranked by what's cached) and
-     * again about every second while movie data comes in, so the list never waits for all of it.
+     * [onUpdate] gets the list while movie data comes in (about every second), so it never waits
+     * for all of it. When two years are ranked together, this year's movies are ranked and shown
+     * first; last year's join them as their data arrives.
      */
     suspend fun getRankedMovies(
         page: Int,
@@ -76,49 +76,17 @@ class RankedMovieRepository(
         onUpdate: (RankedPage) -> Unit = {}
     ): RankedPage {
         val seen = handledIds.toMutableSet()
-        val candidates = mutableListOf<Movie>()
-        var currentPage = page
+        // Movies of the years (or pages) already ranked
+        val ranked = mutableListOf<MovieFacts>()
         var lastPage = page
         var hasMore = true
-        if (readsNewestFirst(filterType)) {
-            // One release year per load: all of this year's movies are ranked together, then last
-            // year's on the next load, and so on. The first load takes the two newest years together
-            // while credits last. A page that runs into an older year is read again next time for the rest.
-            val yearsInBatch = if (handledIds.isEmpty() && mayMergeRecentYears()) 2 else 1
-            // Pages are read a few ahead, in parallel; a failed page only matters if it's needed
-            supervisorScope {
-                val pages = HashMap<Int, Deferred<List<Movie>>>()
-                suspend fun pageAt(index: Int): List<Movie> {
-                    for (ahead in index until index + PAGES_READ_AHEAD) {
-                        pages.getOrPut(ahead) { async { readServerPage(ahead, genreId, filterType) } }
-                    }
-                    return pages.getValue(index).await()
-                }
-                var yearsRead = 0
-                // A year whose movies were all skipped (e.g. only Indian ones) gives nothing to show, so go on
-                while (candidates.isEmpty() && hasMore && yearsRead < MAX_YEARS_PER_LOAD) {
-                    yearsRead++
-                    var batchYear: Int? = null
-                    val firstPage = currentPage
-                    while (true) {
-                        val movies = pageAt(currentPage)
-                        hasMore = movies.isNotEmpty()
-                        val unseen = movies.filter { it.id !in seen }
-                        if (batchYear == null) batchYear = unseen.maxOfOrNull { it.year }
-                        val oldestYear = batchYear?.let { it - (yearsInBatch - 1) }
-                        val (sameYear, older) = if (oldestYear == null) emptyList<Movie>() to emptyList() else unseen.partition { it.year >= oldestYear }
-                        sameYear.forEach { seen.add(it.id) }
-                        candidates += sameYear.filter { MovieRanking.isCandidate(it, filterType) }
-                        lastPage = if (older.isNotEmpty()) currentPage - 1 else currentPage
-                        if (older.isNotEmpty() || !hasMore || currentPage - firstPage + 1 >= MAX_PAGES_PER_YEAR * yearsInBatch) break
-                        currentPage++
-                    }
-                    currentPage = lastPage + 1
-                }
-                pages.values.forEach { it.cancel() }
-            }
-        } else {
+        fun result(facts: List<MovieFacts>, progress: String?) =
+            rankedPage(facts, filterType, lastPage, hasMore, seen.toSet(), progress)
+
+        if (!readsNewestFirst(filterType)) {
             // Skipped and weaker movies leave gaps, so read on until the batch fills
+            val candidates = mutableListOf<Movie>()
+            var currentPage = page
             while (true) {
                 val movies = readServerPage(currentPage, genreId, filterType)
                 hasMore = movies.isNotEmpty()
@@ -127,48 +95,125 @@ class RankedMovieRepository(
                 if (candidates.size >= MIN_BATCH_SIZE || !hasMore || currentPage - page + 1 >= MAX_PAGES_PER_LOAD) break
                 currentPage++
             }
+            ranked += rankGroup(candidates, filterType, emptyList(), year = null) { facts, progress -> onUpdate(result(facts, progress)) }
+            return result(ranked, null)
         }
 
-        fun result(facts: List<MovieFacts>, progress: String?) =
-            rankedPage(facts, filterType, lastPage, hasMore, seen.toSet(), progress)
+        // One release year at a time: all of a year's movies are ranked together. The first load
+        // takes the two newest years while credits last. A page that runs into an older year is
+        // read again for the rest.
+        val yearsInBatch = if (handledIds.isEmpty() && mayMergeRecentYears()) 2 else 1
+        // Pages are read a few ahead, in parallel; a failed page only matters if it's needed
+        supervisorScope {
+            val pages = HashMap<Int, Deferred<List<Movie>>>()
+            suspend fun pageAt(index: Int): List<Movie> {
+                for (ahead in index until index + PAGES_READ_AHEAD) {
+                    pages.getOrPut(ahead) { async { readServerPage(ahead, genreId, filterType) } }
+                }
+                return pages.getValue(index).await()
+            }
+            var currentPage = page
+            var yearsRead = 0
+            var yearsRanked = 0
+            // A year whose movies are all skipped (e.g. only Indian ones) gives nothing to show, so go on
+            while (hasMore && yearsRanked < yearsInBatch && yearsRead < MAX_YEARS_PER_LOAD + yearsInBatch - 1) {
+                yearsRead++
+                val candidates = mutableListOf<Movie>()
+                var year: Int? = null
+                val firstPage = currentPage
+                while (true) {
+                    val movies = pageAt(currentPage)
+                    hasMore = movies.isNotEmpty()
+                    val unseen = movies.filter { it.id !in seen }
+                    if (year == null) year = unseen.maxOfOrNull { it.year }
+                    val (sameYear, older) = year?.let { y -> unseen.partition { it.year >= y } } ?: (emptyList<Movie>() to emptyList())
+                    sameYear.forEach { seen.add(it.id) }
+                    candidates += sameYear.filter { MovieRanking.isCandidate(it, filterType) }
+                    lastPage = if (older.isNotEmpty()) currentPage - 1 else currentPage
+                    if (older.isNotEmpty() || !hasMore || currentPage - firstPage + 1 >= MAX_PAGES_PER_YEAR) break
+                    currentPage++
+                }
+                currentPage = lastPage + 1
+                if (candidates.isEmpty()) continue
+                yearsRanked++
+                val before = ranked.toList()
+                ranked += rankGroup(candidates, filterType, before, year) { facts, progress ->
+                    onUpdate(result(facts, progress))
+                }
+                // Shown while the next year's list is read
+                if (hasMore && yearsRanked < yearsInBatch) onUpdate(result(ranked, "Reading older movies…"))
+            }
+            pages.values.forEach { it.cancel() }
+        }
+        return result(ranked, null)
+    }
 
-        // Movie data comes from the cache (free, instant) and then from Watchmode and OMDb; each
-        // movie's slot holds the best data known so far, null once the movie is skipped
+    /**
+     * Gets the data of [candidates] (cached first, then asked for, the best rated first) and returns
+     * their facts; skipped movies are left out. [emit] gets [before] plus these movies while their
+     * data comes in: all of them when nothing was ranked before, else each once its data is in.
+     */
+    private suspend fun rankGroup(
+        candidates: List<Movie>,
+        filterType: FilterType,
+        before: List<MovieFacts>,
+        // The movies' release year, for the progress line
+        year: Int?,
+        emit: (List<MovieFacts>, String?) -> Unit
+    ): List<MovieFacts> {
+        // Each movie's best data so far; empty once the movie is skipped (e.g. Indian)
         val slots = ConcurrentHashMap<Int, Optional<MovieFacts>>()
-        fun known(): List<MovieFacts> = candidates.indices.mapNotNull { i -> slots[i]?.orElse(null) }
+        val ready = ConcurrentHashMap.newKeySet<Int>()
         coroutineScope {
             candidates.indices.map { i ->
-                async { slots[i] = Optional.ofNullable(facts(candidates[i], filterType, cachedOnly = true)) }
+                async {
+                    val facts = facts(candidates[i], filterType, cachedOnly = true)
+                    slots[i] = Optional.ofNullable(facts)
+                    if (facts == null || isComplete(facts, filterType)) ready += i
+                }
             }.awaitAll()
         }
-        val needsRequests = filterType.needsMovieData || filterType.needsOmdb
-        if (!needsRequests) return result(known(), null)
-        onUpdate(result(known(), progressText(0, candidates.size)))
+        fun group(onlyReady: Boolean) = candidates.indices
+            .filter { !onlyReady || it in ready }
+            .mapNotNull { slots[it]?.orElse(null) }
+        val pending = candidates.indices.filter { it !in ready }
+        if (pending.isEmpty()) return group(onlyReady = false)
 
-        val done = AtomicInteger()
+        val showAll = before.isEmpty()
+        val what = if (year != null) "data for $year movies" else "movie data"
+        fun progress() = "Getting $what: ${ready.size} of ${candidates.size}…"
+        emit(before + group(onlyReady = !showAll), progress())
         coroutineScope {
             val ticker = launch {
                 while (true) {
                     delay(UPDATE_INTERVAL_MS)
-                    onUpdate(result(known(), progressText(done.get(), candidates.size)))
+                    emit(before + group(onlyReady = !showAll), progress())
                 }
             }
-            // The best rated first, so the likely top of the list is filled in first
-            candidates.indices.sortedByDescending { candidates[it].imdb }.map { i ->
+            pending.sortedByDescending { candidates[it].imdb }.map { i ->
                 async {
-                    // A movie skipped from the cache (Indian or Turkish) stays skipped
-                    if (slots[i]?.isPresent != false) {
-                        slots[i] = Optional.ofNullable(facts(candidates[i], filterType, cachedOnly = false))
-                    }
-                    done.incrementAndGet()
+                    slots[i] = Optional.ofNullable(facts(candidates[i], filterType, cachedOnly = false))
+                    ready += i
                 }
             }.awaitAll()
             ticker.cancel()
         }
-        return result(known(), null)
+        return group(onlyReady = false)
     }
 
-    private fun progressText(done: Int, total: Int) = "Getting movie data: $done of $total…"
+    // Whether the cache already had everything the sort ranks by, so no request is needed
+    private fun isComplete(facts: MovieFacts, filterType: FilterType): Boolean {
+        if (!filterType.needsMovieData && !filterType.needsOmdb) return true
+        val info = facts.info
+        if (filterType.needsMovieData && info == null) return false
+        if (filterType.needsCast && info != null && info.castPopularity == null) return false
+        if (filterType.needsOmdb) {
+            // Most Awards with the awards named in the description needs nothing else
+            if (info == null) return facts.awards != null
+            if (info.imdbId.isNotEmpty() && facts.rating == null && facts.awards?.summary.isNullOrEmpty()) return false
+        }
+        return true
+    }
 
     private fun rankedPage(
         batch: List<MovieFacts>,
