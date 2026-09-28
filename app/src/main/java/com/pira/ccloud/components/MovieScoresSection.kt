@@ -15,12 +15,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.repository.MovieInsights
+import com.pira.ccloud.data.repository.MovieRanking
 import com.pira.ccloud.data.repository.OmdbClient
 import java.util.Locale
 
-/** The movie's awards and the value of each ranking criterion, below its description. */
+/** Loads the movie's awards, current IMDb rating and criteria; null while loading or on failure. */
 @Composable
-fun MovieScoresSection(movie: Movie, modifier: Modifier = Modifier) {
+fun rememberMovieInsight(movie: Movie): MovieInsights.Insight? {
     val insight by produceState<MovieInsights.Insight?>(initialValue = null, movie.id) {
         value = try {
             MovieInsights.load(movie)
@@ -28,7 +29,12 @@ fun MovieScoresSection(movie: Movie, modifier: Modifier = Modifier) {
             null
         }
     }
+    return insight
+}
 
+/** The movie's awards and the value of each ranking criterion, below its description. */
+@Composable
+fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -51,14 +57,21 @@ fun MovieScoresSection(movie: Movie, modifier: Modifier = Modifier) {
             )
         } else {
             val info = data.facts.info
+            val rating = data.facts.rating
             ScoreRow("Awards", awardsText(data.facts.awards, data.awardsFromDescription))
             data.releaseDate?.let { ScoreRow("Release date", it) }
             ScoreRow(
                 "IMDB",
-                if (movie.imdb > 0) {
-                    format("%.1f  (Top Rated score %.2f, trusted %d%%)", movie.imdb, data.topRated, ((info?.ratingConfidence ?: 0.0) * 100).toInt())
-                } else {
-                    "—"
+                when {
+                    rating != null -> format(
+                        "%.1f from %,d votes (OMDb)\n(Top Rated score %.2f, trusted %d%%)",
+                        rating.imdb, rating.votes, data.topRated, (MovieRanking.ratingConfidence(data.facts) * 100).toInt()
+                    )
+                    movie.imdb > 0 -> format(
+                        "%.1f (the site's, may be old)\n(Top Rated score %.2f, trusted %d%%)",
+                        movie.imdb, data.topRated, (MovieRanking.ratingConfidence(data.facts) * 100).toInt()
+                    )
+                    else -> "—"
                 }
             )
             if (info != null) {

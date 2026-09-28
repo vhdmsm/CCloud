@@ -10,16 +10,20 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
+import java.util.Calendar
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
- * Award data from OMDb (https://www.omdbapi.com). Each key allows 1000 requests a day, so the
- * keys are used in turn, answers are kept on the device for a month, and only the award sorts ask.
+ * Awards and the current IMDb rating from OMDb (https://www.omdbapi.com). The server's IMDb score
+ * is the one from when the movie was added, which is far off for new movies. Each key allows 1000
+ * requests a day, so the keys are used in turn and answers are kept on the device: a few days for
+ * recent movies (their rating still moves), a month for older ones.
  */
 object OmdbClient {
     private const val BASE_URL = "https://www.omdbapi.com/"
     private const val CACHE_TTL_MS = 30L * 24 * 60 * 60 * 1000
+    private const val RECENT_CACHE_TTL_MS = 3L * 24 * 60 * 60 * 1000
     // A key that hit its daily limit is tried again after this
     private const val LIMIT_BACKOFF_MS = 3L * 60 * 60 * 1000
     private const val OFFLINE_BACKOFF_MS = 60_000L
@@ -44,8 +48,13 @@ object OmdbClient {
         val summary: String = ""
     )
 
+    // IMDb's current rating and how many people voted
+    data class Rating(val imdb: Double, val votes: Int)
+
+    data class Details(val awards: Awards, val rating: Rating?)
+
     private var prefs: SharedPreferences? = null
-    private val memoryCache = ConcurrentHashMap<String, Awards>()
+    private val memoryCache = ConcurrentHashMap<String, Details>()
     private val keyBlockedUntil = ConcurrentHashMap<String, Long>()
 
     @Volatile
@@ -59,28 +68,38 @@ object OmdbClient {
         }
 
     fun init(context: Context) {
-        if (prefs == null) prefs = context.applicationContext.getSharedPreferences("omdb_awards", Context.MODE_PRIVATE)
+        if (prefs == null) prefs = context.applicationContext.getSharedPreferences("omdb", Context.MODE_PRIVATE)
     }
 
-    /** Awards of the movie with this IMDb id; null when unknown or OMDb can't answer right now. */
-    suspend fun awards(imdbId: String): Awards? = withContext(Dispatchers.IO) {
+    /**
+     * Awards and rating of the movie with this IMDb id ([year]: its release year, for how long the
+     * answer is kept); null when unknown. When OMDb can't answer (every key
+     * at its daily limit, no connection) an older kept answer is used, so hitting a limit loses nothing.
+     */
+    suspend fun details(imdbId: String, year: Int): Details? = withContext(Dispatchers.IO) {
         if (imdbId.isEmpty() || !isConfigured) return@withContext null
-        memoryCache[imdbId]?.let { return@withContext it }
-        readCache(imdbId)?.let { text ->
-            return@withContext parseAwards(text).also { memoryCache[imdbId] = it }
+        val ttl = if (year >= Calendar.getInstance().get(Calendar.YEAR) - 1) RECENT_CACHE_TTL_MS else CACHE_TTL_MS
+        val cached = readCache(imdbId)
+        if (cached != null && System.currentTimeMillis() - cached.first <= ttl) {
+            return@withContext memoryCache.getOrPut(imdbId) { parseDetails(cached.second) }
         }
-        if (System.currentTimeMillis() < offlineUntil) return@withContext null
+        memoryCache.remove(imdbId)
+        val stale = cached?.let { parseDetails(it.second) }
+        if (System.currentTimeMillis() < offlineUntil) return@withContext stale
 
         for (key in keys) {
             if ((keyBlockedUntil[key] ?: 0L) > System.currentTimeMillis()) continue
             try {
                 val json = get(imdbId, key)
                 // Not an OMDb answer (e.g. an error page): try again later, cache nothing
-                if (!json.has("Response")) return@withContext null
+                if (!json.has("Response")) return@withContext stale
                 if (json.optString("Response") == "True") {
-                    val text = json.optString("Awards", "N/A")
-                    writeCache(imdbId, text)
-                    return@withContext parseAwards(text).also { memoryCache[imdbId] = it }
+                    val kept = JSONObject()
+                        .put("Awards", json.optString("Awards", "N/A"))
+                        .put("imdbRating", json.optString("imdbRating", "N/A"))
+                        .put("imdbVotes", json.optString("imdbVotes", "N/A"))
+                    writeCache(imdbId, kept)
+                    return@withContext parseDetails(kept).also { memoryCache[imdbId] = it }
                 }
                 val error = json.optString("Error")
                 if (error.contains("limit", ignoreCase = true) || error.contains("API key", ignoreCase = true)) {
@@ -88,17 +107,31 @@ object OmdbClient {
                     keyBlockedUntil[key] = System.currentTimeMillis() + LIMIT_BACKOFF_MS
                     continue
                 }
-                // e.g. "Incorrect IMDb ID.": no awards to know about
-                writeCache(imdbId, "N/A")
-                return@withContext parseAwards("N/A")
+                // e.g. "Incorrect IMDb ID.": nothing to know about
+                val nothing = JSONObject().put("Awards", "N/A")
+                writeCache(imdbId, nothing)
+                return@withContext parseDetails(nothing).also { memoryCache[imdbId] = it }
             } catch (e: IOException) {
                 offlineUntil = System.currentTimeMillis() + OFFLINE_BACKOFF_MS
-                return@withContext null
+                return@withContext stale
             } catch (e: Exception) {
-                return@withContext null
+                return@withContext stale
             }
         }
-        null
+        stale
+    }
+
+    private fun parseDetails(json: JSONObject): Details =
+        parseDetails(json.optString("Awards", "N/A"), json.optString("imdbRating"), json.optString("imdbVotes"))
+
+    /** Awards and rating from OMDb's fields, e.g. imdbRating "8.4" and imdbVotes "477,953" ("N/A" when unknown). */
+    fun parseDetails(awards: String, imdbRating: String, imdbVotes: String): Details {
+        val imdb = imdbRating.toDoubleOrNull()
+        val votes = imdbVotes.replace(",", "").toIntOrNull() ?: 0
+        return Details(
+            awards = parseAwards(awards),
+            rating = imdb?.takeIf { it > 0 }?.let { Rating(it, votes) }
+        )
     }
 
     /**
@@ -135,14 +168,18 @@ object OmdbClient {
         }
     }
 
-    private fun readCache(imdbId: String): String? {
+    // When the answer was kept, and the answer
+    private fun readCache(imdbId: String): Pair<Long, JSONObject>? {
         val entry = prefs?.getString(imdbId, null) ?: return null
         val savedAt = entry.substringBefore('|').toLongOrNull() ?: return null
-        if (System.currentTimeMillis() - savedAt > CACHE_TTL_MS) return null
-        return entry.substringAfter('|')
+        return try {
+            savedAt to JSONObject(entry.substringAfter('|'))
+        } catch (e: Exception) {
+            null
+        }
     }
 
-    private fun writeCache(imdbId: String, text: String) {
-        prefs?.edit()?.putString(imdbId, "${System.currentTimeMillis()}|$text")?.apply()
+    private fun writeCache(imdbId: String, json: JSONObject) {
+        prefs?.edit()?.putString(imdbId, "${System.currentTimeMillis()}|$json")?.apply()
     }
 }

@@ -63,17 +63,17 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Server sorts**: Default, by year, or by IMDB score, combined with a genre
 - **Single-field sorts**:
   - **Most Popular**: current popularity
-  - **Top Rated**: IMDB score, trusted more when many people voted (a 9.0 from a few votes doesn't beat an 8.3 from thousands)
+  - **Top Rated**: the current IMDB score (from OMDb; the site's score is from when the movie was added), trusted more when many people voted (a 9.0 from a few hundred votes doesn't beat an 8.3 from 100,000)
   - **Famous Actors**: popularity of the three lead actors
   - **Most Awards**: Oscar wins and nominations and other awards, from the movie's description when it names them, else OMDb
   - **Newest Release Date**: release date from the movie's description, else the year
 - **Combined sorts**:
   - **Top Picks (Rating + Year)**: IMDB score with a bonus for newer releases (movies rated 6.5 or higher)
   - **Popular + Actors**: popularity, how widely known the movie is, and lead actors
-  - **Best Overall (All)**: rating (the server's IMDB, 30%), awards (25%), popularity (30%) and actors (15%) together (the year isn't weighed: these sorts already go one year at a time). Recent movies (this year's and last year's), which haven't had time to win all their awards, spread the awards' share evenly over the other three and get their awards added on top, so missing awards cost nothing and early awards still count
+  - **Best Overall (All)**: rating (the current IMDB score, 30%), awards (20%), popularity (30%) and actors (20%) together (the year isn't weighed: these sorts already go one year at a time). Recent movies (this year's and last year's), which haven't had time to win all their awards, spread the awards' share evenly over the other three and get their awards added on top, so missing awards cost nothing and early awards still count
 - Indian and Turkish movies are left out of the single-field and combined sorts
-- Each movie's page shows its awards and the value of every criterion (popularity, how well known it is, lead actors, release date, Top Rated and Best Overall scores with their parts)
-- Movie data (popularity, actors) comes from Watchmode, awards from the description or OMDb; the site's own posts (Persian titles) and Indian and Turkish movies (by country or the site's genres) are skipped before any request
+- Each movie's page shows its awards, its current IMDB score with the number of votes, and the value of every criterion (popularity, how well known it is, lead actors, release date, Top Rated and Best Overall scores with their parts)
+- Movie data (popularity, actors) comes from Watchmode, the current IMDB score and awards from OMDb (or awards from the description); the site's own posts (Persian titles) and Indian and Turkish movies (by country or the site's genres) are skipped before any request
 
 ### ❤️ Favorites Management
 - **Save Content**: Add movies and series to your favorites list
@@ -182,7 +182,7 @@ No user login is needed: without one, OpenSubtitles allows a few downloads per d
 
 ### Watchmode and OMDb API Keys
 
-The single-field and combined movie sorts read popularity, actors and release dates from [Watchmode](https://api.watchmode.com) (which works from Iran), and awards from [OMDb](https://www.omdbapi.com). Without the keys the app works normally; only the sorts that need them are hidden.
+The single-field and combined movie sorts read popularity, actors and release dates from [Watchmode](https://api.watchmode.com) (which works from Iran), and the current IMDB score and awards from [OMDb](https://www.omdbapi.com). Without the keys the app works normally; only the sorts that need them are hidden.
 
 1. Get a free Watchmode key on the [Watchmode API page](https://api.watchmode.com/requestApiKey/), and a free OMDb key on the [OMDb API key page](https://www.omdbapi.com/apikey.aspx).
 2. For local builds, add them to `secrets.properties` in the project root:
@@ -201,7 +201,7 @@ The single-field and combined movie sorts read popularity, actors and release da
 
 Watchmode's free plan has a monthly quota: each movie costs 2 credits (the actor sorts a few more; actors are cached). The sorts that use it read the server's newest-first list by release year: this year's and last year's movies are ranked together first (only this year's when credits are low), then each older year as you scroll; when less than 20% of the month's credits are left, only this year's movies get new lookups. Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
 
-OMDb allows 1000 requests a day per key. To save them, only the award sorts (Most Awards, Best Overall) use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device for 30 days.
+OMDb allows 1000 requests a day per key. To save them, only Top Rated, Most Awards and Best Overall use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device (3 days for this year's and last year's movies, whose ratings still move, 30 days for older ones). When a limit is reached (OMDb's daily one or Watchmode's monthly one), the answers already kept on the device are still used, even older ones, so nothing that was fetched is lost.
 
 ### Fixing Gradle Wrapper Issues
 

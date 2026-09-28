@@ -69,6 +69,7 @@ import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.model.Source
 import com.pira.ccloud.utils.DownloadUtils
 import com.pira.ccloud.components.MovieScoresSection
+import com.pira.ccloud.components.rememberMovieInsight
 import com.pira.ccloud.utils.StorageUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -134,6 +135,8 @@ fun MovieDetailsContent(
     val layoutDirection = LocalLayoutDirection.current
     var selectedSource by remember { mutableStateOf<Source?>(null) }
     var showSourceDialog by remember { mutableStateOf(false) }
+    // Awards, criteria and the current IMDb rating (the site's rating is from when the movie was added)
+    val insight = rememberMovieInsight(movie)
     
     // Source selection dialog
     if (showSourceDialog && selectedSource != null) {
@@ -284,7 +287,7 @@ fun MovieDetailsContent(
                         Spacer(modifier = Modifier.width(8.dp))
                         
                         Text(
-                            text = String.format("%.1f", movie.imdb),
+                            text = String.format("%.1f", insight?.facts?.imdb ?: movie.imdb),
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.onSurface
@@ -460,7 +463,7 @@ fun MovieDetailsContent(
         }
         
         // Awards and the ranking criteria
-        MovieScoresSection(movie = movie)
+        MovieScoresSection(movie = movie, insight = insight)
         
         // Sources/Quality options
         if (movie.sources.isNotEmpty()) {

@@ -93,12 +93,12 @@ object WatchmodeClient {
      * [cachedOnly] answers from the cache alone, without any request.
      */
     suspend fun movie(title: String, year: Int, withCast: Boolean, cachedOnly: Boolean = false): MovieInfo? = withContext(Dispatchers.IO) {
-        if (!cachedOnly && !isAvailable) return@withContext null
         val query = title.replace(Regex("\\((19|20)\\d{2}\\)"), " ").replace(Regex("\\s+"), " ").trim()
         if (query.isEmpty()) return@withContext null
         val key = "t:${query.lowercase()}|$year"
-        // Cached answers are free; new lookups for older movies wait while credits are low
-        val mayLookUp = !cachedOnly && allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare)
+        // Cached answers are free and still used when the credits are out; new lookups for older
+        // movies wait while credits are low
+        val mayLookUp = !cachedOnly && isAvailable && allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare)
 
         try {
             var stored = readCache(key)?.let { JSONObject(it) }

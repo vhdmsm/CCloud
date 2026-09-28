@@ -36,12 +36,17 @@ class RankedMovieRepository(
         val attribution: String?
     )
 
-    // A movie with the data the sorts rank by; info and awards are null when unknown or not needed
+    // A movie with the data the sorts rank by; info, awards and rating are null when unknown or not needed
     data class MovieFacts(
         val movie: Movie,
         val info: MovieInfo?,
-        val awards: OmdbClient.Awards?
-    )
+        val awards: OmdbClient.Awards?,
+        // IMDb's current rating from OMDb
+        val rating: OmdbClient.Rating? = null
+    ) {
+        // The current IMDb rating, else the server's (from when the movie was added)
+        val imdb: Double get() = rating?.imdb ?: movie.imdb
+    }
 
     /** [handledIds]: movies earlier loads of this list already dealt with (shown or skipped). */
     suspend fun getRankedMovies(
@@ -103,20 +108,22 @@ class RankedMovieRepository(
         val omdbMissing = filterType.needsOmdb && !OmdbClient.isAvailable && batch.any { it.awards == null }
         val year = Calendar.getInstance().get(Calendar.YEAR)
         val byScore = compareByDescending<MovieFacts> {
-            if (dataMissing || castMissing) it.movie.imdb else MovieRanking.score(filterType, it, year)
+            if (dataMissing || castMissing) it.imdb else MovieRanking.score(filterType, it, year)
         }
         // Ties go to the better IMDB score; for Newest the server's order (newest added first) stays
-        val ranked = batch.sortedWith(if (filterType == FilterType.NEWEST) byScore else byScore.thenByDescending { it.movie.imdb })
+        val ranked = batch.sortedWith(if (filterType == FilterType.NEWEST) byScore else byScore.thenByDescending { it.imdb })
         val notice = when {
             dataMissing -> "Movie data from Watchmode isn't available right now (monthly limit or no connection), showing movies by IMDB score"
             castMissing -> "Actor data isn't available right now, showing movies by IMDB score"
-            omdbMissing -> "Award data from OMDb isn't available right now (daily limit or no connection)"
+            omdbMissing -> "IMDb ratings and awards from OMDb aren't available right now (daily limit or no connection)"
             filterType.needsMovieData && WatchmodeClient.isSavingCredits ->
                 "Watchmode credits are low this month: only this year's movies get new data"
             else -> null
         }
         val attribution = if (batch.any { it.info != null }) "Movie data from Watchmode" else null
-        return RankedPage(ranked.map { it.movie }, lastPage, hasMore, seen, notice, attribution)
+        // The list shows the current IMDb rating where OMDb gave one
+        val movies = ranked.map { facts -> facts.rating?.let { facts.movie.copy(imdb = it.imdb) } ?: facts.movie }
+        return RankedPage(movies, lastPage, hasMore, seen, notice, attribution)
     }
 
     // Sorts that ask Watchmode or OMDb read only the newest-first list: their limited requests go to
@@ -141,8 +148,8 @@ class RankedMovieRepository(
         val omdb = Semaphore(4)
     }
 
-    // Awards named in the description need no request; otherwise Watchmode gives the IMDb id for
-    // OMDb. Movies Watchmode says are Indian or Turkish are dropped before any OMDb request.
+    // Watchmode gives the IMDb id for OMDb (Most Awards skips both when the description names the
+    // awards). Movies Watchmode says are Indian or Turkish are dropped before any OMDb request.
     private suspend fun addFacts(
         movies: List<Movie>,
         filterType: FilterType,
@@ -153,7 +160,8 @@ class RankedMovieRepository(
                 val describedAwards = if (filterType.needsOmdb) MovieDescription.awards(movie) else null
                 val needsInfo = filterType.needsMovieData || (filterType.needsOmdb && describedAwards == null)
                 val info = when {
-                    needsInfo && WatchmodeClient.isAvailable ->
+                    // Answers from the cache even when the credits are out
+                    needsInfo && WatchmodeClient.isConfigured ->
                         permits.watchmode.withPermit { WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast) }
                     // Newest uses a release date Watchmode already gave for another sort, at no cost
                     filterType == FilterType.NEWEST && WatchmodeClient.isConfigured ->
@@ -161,12 +169,12 @@ class RankedMovieRepository(
                     else -> null
                 }
                 if (info != null && MovieRanking.isExcludedOrigin(info)) return@async null
-                val awards = describedAwards ?: if (filterType.needsOmdb && info != null && info.imdbId.isNotEmpty()) {
-                    permits.omdb.withPermit { OmdbClient.awards(info.imdbId) }
+                val details = if (filterType.needsOmdb && info != null && info.imdbId.isNotEmpty()) {
+                    permits.omdb.withPermit { OmdbClient.details(info.imdbId, movie.year) }
                 } else {
                     null
                 }
-                MovieFacts(movie, info, awards)
+                MovieFacts(movie, info, MovieRanking.pickAwards(details?.awards, describedAwards), details?.rating)
             }
         }.awaitAll().filterNotNull()
     }
@@ -188,6 +196,8 @@ object MovieRanking {
     private const val RECENCY_BONUS = 1.0
     // Top Rated pulls scores of little-known movies towards this average, so an obscure 9.0 can't win
     private const val PRIOR_RATING = 6.0
+    // IMDb votes at which the score counts half and the average the other half
+    private const val RATING_VOTES_PRIOR = 10_000.0
 
     // Indian and Turkish movies are left out of the ranked sorts, by the server's country or genre
     private val excludedCountryNames = setOf("india", "هند", "هندوستان", "turkey", "türkiye", "turkiye", "ترکیه")
@@ -219,7 +229,7 @@ object MovieRanking {
         val info = facts.info
         return when (filterType) {
             FilterType.MOST_POPULAR -> info?.popularity ?: -1.0
-            FilterType.TOP_RATED -> weightedRating(movie.imdb, info?.ratingConfidence ?: 0.0)
+            FilterType.TOP_RATED -> weightedRating(facts.imdb, ratingConfidence(facts))
             FilterType.STAR_CAST -> info?.castPopularity ?: -1.0
             FilterType.MOST_AWARDED -> facts.awards?.let { awardsScore(it) } ?: -1.0
             FilterType.NEWEST -> releaseDateValue(MovieDescription.releaseDate(movie) ?: info?.releaseDate.orEmpty(), movie.year)
@@ -235,6 +245,20 @@ object MovieRanking {
      * 25 years ago (8.2), while classics rated 8.7+ stay near the top.
      */
     fun topPicksScore(imdb: Double, year: Int, currentYear: Int): Double = imdb + RECENCY_BONUS * recency(year, currentYear)
+
+    /**
+     * 0..1: how far the IMDB score can be trusted. From the number of IMDb votes when OMDb gave it
+     * (10,000 votes -> 0.5, 100,000 -> 0.91), else from how well known Watchmode says the movie is.
+     */
+    fun ratingConfidence(facts: RankedMovieRepository.MovieFacts): Double {
+        val votes = facts.rating?.votes ?: 0
+        if (votes > 0) return votes / (votes + RATING_VOTES_PRIOR)
+        return facts.info?.ratingConfidence ?: 0.0
+    }
+
+    /** OMDb's awards when it names any, else the ones in the description, else OMDb's "none". */
+    fun pickAwards(omdb: OmdbClient.Awards?, described: OmdbClient.Awards?): OmdbClient.Awards? =
+        omdb?.takeIf { it.summary.isNotEmpty() } ?: described ?: omdb
 
     /** IMDB score pulled towards an average for little-known movies (a Bayesian average). */
     fun weightedRating(imdb: Double, confidence: Double): Double {
@@ -260,12 +284,12 @@ object MovieRanking {
 
     // Best Overall weights; they add up to 1
     private const val RATING_WEIGHT = 0.30
-    private const val AWARDS_WEIGHT = 0.25
+    private const val AWARDS_WEIGHT = 0.20
     private const val POPULARITY_WEIGHT = 0.30
-    private const val ACTORS_WEIGHT = 0.15
+    private const val ACTORS_WEIGHT = 0.20
 
     /**
-     * 0..1 mix of rating (the server's IMDB, 30%), awards (25%), popularity (30%) and cast (15%).
+     * 0..1 mix of rating (IMDB, 30%), awards (20%), popularity (30%) and cast (20%).
      * Missing parts count as zero. The release year isn't weighed: the list is read one year at a
      * time, so the movies ranked together are from the same year already.
      *
@@ -292,7 +316,7 @@ object MovieRanking {
     fun bestOverallParts(facts: RankedMovieRepository.MovieFacts, currentYear: Int): BestOverallParts {
         val info = facts.info
         // 5.0 -> 0, 9.0 -> 1
-        val rating = ((weightedRating(facts.movie.imdb, info?.ratingConfidence ?: 0.0) - 5.0) / 4.0).coerceIn(0.0, 1.0)
+        val rating = ((weightedRating(facts.imdb, ratingConfidence(facts)) - 5.0) / 4.0).coerceIn(0.0, 1.0)
         val popularity = info?.popularity ?: 0.0
         val actors = info?.castPopularity ?: 0.0
         val withAwards = BestOverallParts(

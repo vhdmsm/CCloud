@@ -176,7 +176,7 @@ class MovieRankingTest {
         val parts = MovieRanking.bestOverallParts(thisYear, currentYear)
         assertTrue(parts.awardsSpread)
         assertEquals(0.0, parts.awards, 1e-9)
-        assertEquals((0.30 + 0.25 / 3) * (7.9 - 5.0) / 4.0, parts.rating, 0.01)
+        assertEquals((0.30 + 0.20 / 3) * (7.9 - 5.0) / 4.0, parts.rating, 0.01)
         // Last year's movies are recent too (they're ranked together); older ones get no such help
         val lastYear = MovieFacts(movie(2, 7.9, currentYear - 1), info(popularity = 99.996, relevance = 99.873, cast = 0.5), null)
         assertTrue(MovieRanking.bestOverallParts(lastYear, currentYear).awardsSpread)
@@ -218,5 +218,47 @@ class MovieRankingTest {
         assertTrue(heartOfTheBeast > forgottenIsland)
         assertEquals(1.0, MovieRanking.castScore(listOf(100.0)), 1e-9)
         assertEquals(0.0, MovieRanking.castScore(emptyList()), 1e-9)
+    }
+
+    @Test
+    fun readsOmdbRatingAndVotes() {
+        val details = OmdbClient.parseDetails("Won 1 Oscar. 5 wins & 20 nominations total", "8.4", "477,953")
+        assertEquals(OmdbClient.Rating(8.4, 477953), details.rating)
+        assertEquals(1, details.awards.oscarWins)
+        assertNull(OmdbClient.parseDetails("N/A", "N/A", "N/A").rating)
+    }
+
+    @Test
+    fun theCurrentImdbRatingReplacesTheSitesOldOne() {
+        // Real data: the site has The Odyssey at 7.6 and The Invite at 7.9; IMDb now says 8.4 and 7.5
+        val odyssey = MovieFacts(movie(1, 7.6, currentYear), info(relevance = 99.9), null, OmdbClient.Rating(8.4, 477953))
+        val invite = MovieFacts(movie(2, 7.9, currentYear), info(relevance = 99.9), null, OmdbClient.Rating(7.5, 68555))
+        assertEquals(8.4, odyssey.imdb, 1e-9)
+        assertEquals(listOf(1, 2), ranked(FilterType.TOP_RATED, invite, odyssey))
+        assertEquals(listOf(1, 2), ranked(FilterType.BEST_OVERALL, invite, odyssey))
+        // Without OMDb the site's rating is used
+        assertEquals(7.9, invite.copy(rating = null).imdb, 1e-9)
+    }
+
+    @Test
+    fun aRatingFromFewVotesCountsLittle() {
+        // Real data: Heart of the Beast 7.5 from 542 votes, The Invite 7.5 from 68,555
+        val heartOfTheBeast = MovieFacts(movie(1, 7.5, currentYear), info(relevance = 99.9), null, OmdbClient.Rating(7.5, 542))
+        val invite = MovieFacts(movie(2, 7.5, currentYear), info(relevance = 99.9), null, OmdbClient.Rating(7.5, 68555))
+        assertTrue(MovieRanking.ratingConfidence(heartOfTheBeast) < 0.1)
+        assertTrue(MovieRanking.ratingConfidence(invite) > 0.85)
+        assertEquals(listOf(2, 1), ranked(FilterType.TOP_RATED, heartOfTheBeast, invite))
+        // No votes known: Watchmode's measure of how well known the movie is
+        assertEquals(0.999, MovieRanking.ratingConfidence(invite.copy(rating = null)), 1e-9)
+    }
+
+    @Test
+    fun omdbAwardsComeFirstWhenItNamesAny() {
+        val omdb = OmdbClient.parseAwards("7 wins & 15 nominations total")
+        val described = OmdbClient.Awards(0, 0, 3, 4)
+        assertEquals(omdb, MovieRanking.pickAwards(omdb, described))
+        assertEquals(described, MovieRanking.pickAwards(OmdbClient.parseAwards("N/A"), described))
+        assertEquals(OmdbClient.parseAwards("N/A"), MovieRanking.pickAwards(OmdbClient.parseAwards("N/A"), null))
+        assertNull(MovieRanking.pickAwards(null, null))
     }
 }
