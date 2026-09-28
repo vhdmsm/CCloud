@@ -90,11 +90,11 @@ class MovieRankingTest {
     }
 
     @Test
-    fun bestOverallWeighsRecencyAboveThePopularity() {
-        // Same rating, cast and awards: a new, less popular movie beats an old, very popular one
-        val newer = MovieFacts(movie(1, 8.0, currentYear), info(popularity = 10.0), null)
-        val older = MovieFacts(movie(2, 8.0, currentYear - 30), info(popularity = 100.0), null)
-        assertEquals(listOf(1, 2), ranked(FilterType.BEST_OVERALL, newer, older))
+    fun bestOverallWeighsAwardsAndPopularityAboveTheYear() {
+        // Same rating and actors: this year's unknown movie loses to an older award winner that everyone knows
+        val newer = MovieFacts(movie(1, 8.0, currentYear), info(popularity = 50.0, cast = 0.5), null)
+        val older = MovieFacts(movie(2, 8.0, currentYear - 20), info(popularity = 99.9, cast = 0.5), OmdbClient.parseAwards("Won 2 Oscars. 30 wins & 40 nominations total"))
+        assertEquals(listOf(2, 1), ranked(FilterType.BEST_OVERALL, newer, older))
     }
 
     @Test
@@ -134,7 +134,7 @@ class MovieRankingTest {
         val facts = MovieFacts(movie(1, 7.9, currentYear), info(popularity = 99.996, relevance = 99.873, cast = 0.5), null)
         val parts = MovieRanking.bestOverallParts(facts, currentYear)
         assertEquals(MovieRanking.bestOverallScore(facts, currentYear), parts.total, 1e-9)
-        assertEquals(0.25, parts.recency, 1e-9)
+        assertEquals(0.10, parts.recency, 1e-9)
         assertEquals(0.0, parts.awards, 1e-9)
     }
 

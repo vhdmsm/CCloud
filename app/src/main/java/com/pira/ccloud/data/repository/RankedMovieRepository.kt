@@ -216,8 +216,8 @@ object MovieRanking {
     }
 
     /**
-     * 0..1 mix of everything: rating (35%), how new the movie is (25%), cast (15%), awards (15%) and
-     * popularity (10%). Missing parts count as zero.
+     * 0..1 mix of everything: rating (35%), awards (25%), popularity (15%), cast (15%) and the
+     * release year (10%: this year's movies in full, less for each year back). Missing parts count as zero.
      */
     fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
         bestOverallParts(facts, currentYear).total
@@ -239,10 +239,10 @@ object MovieRanking {
         val rating = ((weightedRating(facts.movie.imdb, info?.ratingConfidence ?: 0.0) - 5.0) / 4.0).coerceIn(0.0, 1.0)
         return BestOverallParts(
             rating = 0.35 * rating,
-            recency = 0.25 * recency(facts.movie.year, currentYear),
+            recency = 0.10 * recency(facts.movie.year, currentYear),
             actors = 0.15 * (info?.castPopularity ?: 0.0),
-            awards = 0.15 * (facts.awards?.let { awardsScore(it) } ?: 0.0),
-            popularity = 0.10 * (info?.popularity ?: 0.0)
+            awards = 0.25 * (facts.awards?.let { awardsScore(it) } ?: 0.0),
+            popularity = 0.15 * (info?.popularity ?: 0.0)
         )
     }
 
