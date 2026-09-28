@@ -47,7 +47,10 @@ class MoviesViewModel : ViewModel() {
     var selectedGenreId by mutableStateOf(0)
         private set
     
-    var selectedFilterType by mutableStateOf(FilterType.DEFAULT)
+    // Best Overall on opening the app when its data sources are set up in the build, else the server's order
+    var selectedFilterType by mutableStateOf(
+        if (FilterType.BEST_OVERALL.isAvailable()) FilterType.BEST_OVERALL else FilterType.DEFAULT
+    )
         private set
     
     // Shown above the list when a ranked sort is missing movie or award data
@@ -63,10 +66,10 @@ class MoviesViewModel : ViewModel() {
         private set
     
     // Sorts whose data source isn't set up in the build are left out
-    val filterTypes: List<FilterType> = FilterType.entries.filter {
-        (!it.needsMovieData || WatchmodeClient.isConfigured) &&
-            (!it.needsOmdb || OmdbClient.isConfigured)
-    }
+    val filterTypes: List<FilterType> = FilterType.entries.filter { it.isAvailable() }
+    
+    private fun FilterType.isAvailable() =
+        (!needsMovieData || WatchmodeClient.isConfigured) && (!needsOmdb || OmdbClient.isConfigured)
     
     private var loadJob: Job? = null
     // Movies the ranked sorts already dealt with (shown or skipped), so the next load doesn't take them again

@@ -61,6 +61,7 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 
 ### 🔎 Movie Filters
 - **Server sorts**: Default, by year, or by IMDB score, combined with a genre
+- The Movies screen opens on **Best Overall** when the Watchmode and OMDb keys are set up (else the server's default order)
 - **Single-field sorts**:
   - **Most Popular**: current popularity
   - **Top Rated**: the current IMDB score (from OMDb; the site's score is from when the movie was added), trusted more when many people voted (a 9.0 from a few hundred votes doesn't beat an 8.3 from 100,000)
