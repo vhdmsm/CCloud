@@ -3,7 +3,9 @@ package com.pira.ccloud.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import com.pira.ccloud.BuildConfig
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
@@ -33,6 +35,10 @@ object WatchmodeClient {
     private const val BLOCKED_BACKOFF_MS = 6L * 60 * 60 * 1000
     // Too many requests this minute, or no connection
     private const val SHORT_BACKOFF_MS = 60_000L
+    // A lookup waits this long at most for a key that hit its per-minute limit, rather than giving up
+    private const val MAX_RATE_WAIT_MS = SHORT_BACKOFF_MS + 5_000L
+    // Tries of one request when keys keep hitting their per-minute limit
+    private const val REQUEST_TRIES = 3
     // Below this share of the month's credits left, only this year's movies get new lookups
     private const val RESERVE_SHARE = 0.2
 
@@ -57,13 +63,6 @@ object WatchmodeClient {
 
     @Volatile
     private var offlineUntil = 0L
-
-    // False while every key is rejected or out of quota, or Watchmode can't be reached
-    val isAvailable: Boolean
-        get() {
-            val now = System.currentTimeMillis()
-            return now >= offlineUntil && keys.any { (keyBlockedUntil[it] ?: 0L) <= now }
-        }
 
     /** Share (0..1) of this month's credits left over all keys, or null before any key has answered. */
     val remainingShare: Double? get() = remainingShare(keys.map { keyQuota[it] })
@@ -100,39 +99,48 @@ object WatchmodeClient {
         if (query.isEmpty()) return@withContext null
         val key = "t:${query.lowercase()}|$year"
         // Cached answers are free and still used when the credits are out; new lookups for older
-        // movies wait while credits are low
-        val mayLookUp = !cachedOnly && isAvailable && allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare)
+        // movies wait while credits are low. A key at its per-minute limit is waited for.
+        val mayLookUp = !cachedOnly && isAvailableSoon && allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare)
 
-        try {
-            var stored = readCache(key)?.let { JSONObject(it) }
-            if (stored == null) {
+        val stored = try {
+            readCache(key)?.let { JSONObject(it) } ?: run {
                 if (!mayLookUp) return@withContext null
                 val id = findMovie(query, year)
-                stored = if (id == null) JSONObject() else details(id)
-                writeCache(key, stored.toString())
+                (if (id == null) JSONObject() else details(id)).also { writeCache(key, it.toString()) }
             }
-            if (!stored.has("id")) return@withContext null
+        } catch (e: IOException) {
+            offlineUntil = System.currentTimeMillis() + SHORT_BACKOFF_MS
+            return@withContext null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext null
+        }
+        if (!stored.has("id")) return@withContext null
 
-            if (withCast && mayLookUp && !stored.has("cast") &&
-                !MovieRanking.isExcludedLanguage(stored.optString("original_language"))
-            ) {
+        if (withCast && mayLookUp && !stored.has("cast") &&
+            !MovieRanking.isExcludedLanguage(stored.optString("original_language"))
+        ) {
+            // A failed actors lookup keeps the movie's data; the actors are asked for again next time
+            try {
                 val actors = leadActors(stored.getInt("id"))
                 stored.put("cast", JSONArray(actors.map { JSONObject().put("name", it.name).put("percentile", it.percentile) }))
                 writeCache(key, stored.toString())
+            } catch (e: IOException) {
+                offlineUntil = System.currentTimeMillis() + SHORT_BACKOFF_MS
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Keep what we have
             }
-            toInfo(stored)
-        } catch (e: IOException) {
-            offlineUntil = System.currentTimeMillis() + SHORT_BACKOFF_MS
-            null
-        } catch (e: Exception) {
-            null
         }
+        toInfo(stored)
     }
 
     data class SearchResult(val id: Int, val type: String, val year: Int)
 
-    private fun findMovie(query: String, year: Int): Int? {
-        val results = get("/search/", "search_field" to "name", "search_value" to query, "types" to "movie")
+    private suspend fun findMovie(query: String, year: Int): Int? {
+        val results = call("/search/", "search_field" to "name", "search_value" to query, "types" to "movie")
             .optJSONArray("title_results") ?: return null
         return pickMovie(
             (0 until results.length()).map { results.getJSONObject(it) }
@@ -154,8 +162,8 @@ object WatchmodeClient {
     }
 
     // Keeps only what the sorts use
-    private fun details(id: Int): JSONObject {
-        val details = get("/title/$id/details/")
+    private suspend fun details(id: Int): JSONObject {
+        val details = call("/title/$id/details/")
         return JSONObject()
             .put("id", id)
             .put("popularity_percentile", details.optDouble("popularity_percentile", 0.0))
@@ -168,7 +176,7 @@ object WatchmodeClient {
     // The first billed actors with how well known they are (asked together); actors' percentiles
     // are cached on their own
     private suspend fun leadActors(titleId: Int): List<MovieInfo.Actor> = coroutineScope {
-        val crew = get("/title/$titleId/cast-crew/").optJSONArray("__array") ?: return@coroutineScope emptyList()
+        val crew = call("/title/$titleId/cast-crew/").optJSONArray("__array") ?: return@coroutineScope emptyList()
         (0 until crew.length()).map { crew.getJSONObject(it) }
             .filter { it.optString("type").equals("Cast", ignoreCase = true) }
             .sortedBy { it.optInt("order", Int.MAX_VALUE) }
@@ -177,7 +185,7 @@ object WatchmodeClient {
                 async {
                     val personId = actor.optInt("person_id")
                     val personKey = "p:$personId"
-                    val percentile = readCache(personKey)?.toDoubleOrNull() ?: get("/person/$personId/")
+                    val percentile = readCache(personKey)?.toDoubleOrNull() ?: call("/person/$personId/")
                         .optDouble("relevance_percentile", 0.0)
                         .also { writeCache(personKey, it.toString()) }
                     MovieInfo.Actor(actor.optString("full_name"), percentile)
@@ -213,6 +221,44 @@ object WatchmodeClient {
         )
     }
 
+    /**
+     * [get] that waits for a key at its per-minute limit (up to a minute) and tries again, instead
+     * of failing: a burst of lookups is slowed down, not left without data.
+     */
+    private suspend fun call(path: String, vararg params: Pair<String, String>): JSONObject {
+        repeat(REQUEST_TRIES - 1) {
+            if (!waitForKey()) throw NoUsableKeyException()
+            try {
+                return get(path, *params)
+            } catch (e: NoUsableKeyException) {
+                // Every key hit a limit meanwhile: wait and try again
+            }
+        }
+        if (!waitForKey()) throw NoUsableKeyException()
+        return get(path, *params)
+    }
+
+    // True when a key can be used now, after waiting for one at its per-minute limit
+    private suspend fun waitForKey(): Boolean {
+        val now = System.currentTimeMillis()
+        if (now < offlineUntil) return false
+        val soonest = keys.minOfOrNull { keyBlockedUntil[it] ?: 0L } ?: return false
+        if (soonest <= now) return true
+        if (soonest - now > MAX_RATE_WAIT_MS) return false
+        delay(soonest - now)
+        return true
+    }
+
+    // A key is usable now or after a per-minute wait (not while every key is rejected or out of
+    // quota, or Watchmode can't be reached)
+    private val isAvailableSoon: Boolean
+        get() {
+            val now = System.currentTimeMillis()
+            return now >= offlineUntil && keys.any { (keyBlockedUntil[it] ?: 0L) - now <= MAX_RATE_WAIT_MS }
+        }
+
+    private class NoUsableKeyException : IllegalStateException("No Watchmode key is usable right now")
+
     // Tries the keys in turn, skipping ones that are rejected or out of quota.
     // Arrays (cast-crew) come back wrapped as {"__array": [...]}
     private fun get(path: String, vararg params: Pair<String, String>): JSONObject {
@@ -231,6 +277,8 @@ object WatchmodeClient {
                 val quota = response.header("X-Account-Quota")?.toLongOrNull()
                 val used = response.header("X-Account-Quota-Used")?.toLongOrNull()
                 if (quota != null && used != null) keyQuota[key] = quota to used
+                // Rests the key before it runs into its per-minute limit
+                if (response.header("X-RateLimit-Remaining")?.toLongOrNull() == 0L) blockKey(key, SHORT_BACKOFF_MS)
                 when (response.code) {
                     200 -> return if (body.trimStart().startsWith("[")) {
                         JSONObject().put("__array", JSONArray(body))
@@ -240,14 +288,20 @@ object WatchmodeClient {
                     404 -> return JSONObject()
                     401, 402, 403 -> blockKey(key, BLOCKED_BACKOFF_MS)
                     429 -> {
-                        // Monthly quota used up, or just too many requests this minute
-                        blockKey(key, if (quota != null && used != null && used >= quota) BLOCKED_BACKOFF_MS else SHORT_BACKOFF_MS)
+                        // Monthly quota used up, or just too many requests this minute (for as
+                        // long as Watchmode says, when it does)
+                        val retryAfterMs = response.header("Retry-After")?.toLongOrNull()?.times(1000)
+                        blockKey(
+                            key,
+                            if (quota != null && used != null && used >= quota) BLOCKED_BACKOFF_MS
+                            else retryAfterMs?.coerceIn(1_000L, SHORT_BACKOFF_MS) ?: SHORT_BACKOFF_MS
+                        )
                     }
                     else -> throw IllegalStateException("Watchmode error ${response.code}")
                 }
             }
         }
-        throw IllegalStateException("No Watchmode key is usable right now")
+        throw NoUsableKeyException()
     }
 
     private fun blockKey(key: String, durationMs: Long) {
