@@ -60,9 +60,18 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Online English Subtitles**: Download English subtitles from OpenSubtitles for videos that don't have them, with timing correction
 
 ### 🔎 Movie Filters
-- **Sort Options**: Default, by year, or by IMDB score, combined with a genre
-- **Top Picks (IMDB + Year)**: Good movies first, ranked by IMDB score with a bonus for newer releases (only movies rated 6.5 or higher)
-- **Popular (Web + Cast)**: Movies ranked by their popularity on TMDB (recent interest and number of votes) and how well known their lead actors are
+- **Server sorts**: Default, by year, or by IMDB score, combined with a genre
+- **Single-field sorts**:
+  - **Most Popular**: current popularity on TMDB
+  - **Top Rated**: IMDB score, trusted more when many people voted (a 9.0 from a few votes doesn't beat an 8.3 from thousands)
+  - **Famous Actors**: popularity of the five lead actors on TMDB
+  - **Most Awards**: Oscar wins and nominations and other awards, from OMDb
+  - **Newest Release Date**: exact release date from TMDB
+- **Combined sorts**:
+  - **Top Picks (Rating + Year)**: IMDB score with a bonus for newer releases (movies rated 6.5 or higher)
+  - **Popular + Actors**: TMDB popularity, number of votes and lead actors
+  - **Best Overall (All)**: rating, popularity, actors, awards and release year together
+- Indian and Turkish movies are left out of the single-field and combined sorts
 
 ### ❤️ Favorites Management
 - **Save Content**: Add movies and series to your favorites list
@@ -169,16 +178,21 @@ Downloading English subtitles from OpenSubtitles needs an API key. Without one t
 
 No user login is needed: without one, OpenSubtitles allows a few downloads per day for each user's IP address.
 
-### TMDB API Key
+### TMDB and OMDb API Keys
 
-The **Popular (Web + Cast)** movie filter reads popularity and cast data from [TMDB](https://www.themoviedb.org). Without a key the app works normally; only that filter is hidden.
+The single-field and combined movie sorts read popularity, votes, actors and release dates from [TMDB](https://www.themoviedb.org), and awards from [OMDb](https://www.omdbapi.com). Without the keys the app works normally; only the sorts that need them are hidden.
 
-1. Create a free account on [themoviedb.org](https://www.themoviedb.org) and request an API key on the [API settings page](https://www.themoviedb.org/settings/api). Either the API key or the API read access token works.
-2. For local builds, add it to `secrets.properties` in the project root:
+1. Get a free TMDB key on the [TMDB API settings page](https://www.themoviedb.org/settings/api) (the API key or the API read access token works), and a free OMDb key on the [OMDb API key page](https://www.omdbapi.com/apikey.aspx).
+2. For local builds, add them to `secrets.properties` in the project root:
    ```properties
-   TMDB_API_KEY=your_api_key
+   TMDB_API_KEY=your_tmdb_key
+   OMDB_API_KEY=your_omdb_key
+   # Optional second OMDb key, used when the first reaches its daily limit
+   OMDB_API_KEY2=your_second_omdb_key
    ```
-3. For release builds with GitHub Actions, add a repository secret named `TMDB_API_KEY`. The build workflow writes it to `secrets.properties`.
+3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
+
+Each OMDb key allows 1000 requests a day, shared by everyone using the build. To save them, only the award sorts (Most Awards, Best Overall) use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device for 30 days.
 
 ### Fixing Gradle Wrapper Issues
 

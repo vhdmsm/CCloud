@@ -65,7 +65,6 @@ import androidx.navigation.NavHostController
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.pira.ccloud.components.GenreFilterSection
-import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Genre
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.ui.movies.MoviesViewModel
@@ -102,9 +101,9 @@ fun MoviesScreen(
             filterTypes = viewModel.filterTypes
         )
         
-        if (selectedFilterType == FilterType.POPULAR && !viewModel.popularityAvailable) {
+        viewModel.rankingNotice?.let { notice ->
             Text(
-                text = "Couldn't reach TMDB for popularity, showing movies by IMDB score",
+                text = notice,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)

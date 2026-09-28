@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Minimal client for The Movie Database API (https://api.themoviedb.org), used to rank movies
- * by how popular they are on the internet and how well known their actors are.
+ * by popularity, votes, how well known their actors are and release date.
  */
 object TmdbClient {
     private const val BASE_URL = "https://api.themoviedb.org/3"
@@ -29,17 +29,24 @@ object TmdbClient {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    data class Popularity(
+    data class TmdbMovie(
         // TMDB's trending score: views, votes and watchlist adds in the last days
         val popularity: Double,
         // Number of votes on TMDB: how many people have seen it overall
         val voteCount: Int,
+        val voteAverage: Double,
         // Average popularity of the first billed actors
-        val castPopularity: Double
+        val castPopularity: Double,
+        // "2024-03-01", empty when unknown
+        val releaseDate: String,
+        // "tt1234567", empty when unknown; used to read awards from OMDb
+        val imdbId: String,
+        val originalLanguage: String,
+        val originCountries: List<String>
     )
 
     // Found movies and movies TMDB doesn't know, by title and year; network errors aren't cached
-    private val cache = ConcurrentHashMap<String, Popularity>()
+    private val cache = ConcurrentHashMap<String, TmdbMovie>()
     private val notFound = ConcurrentHashMap.newKeySet<String>()
 
     @Volatile
@@ -47,8 +54,8 @@ object TmdbClient {
 
     val isReachable: Boolean get() = System.currentTimeMillis() >= offlineUntil
 
-    /** Popularity of the movie with this title and year, or null when TMDB can't find it or can't be reached. */
-    suspend fun moviePopularity(title: String, year: Int): Popularity? = withContext(Dispatchers.IO) {
+    /** TMDB data for the movie with this title and year, or null when TMDB can't find it or can't be reached. */
+    suspend fun movie(title: String, year: Int): TmdbMovie? = withContext(Dispatchers.IO) {
         if (!isConfigured || !isReachable) return@withContext null
         val query = cleanTitle(title)
         if (query.isEmpty()) return@withContext null
@@ -57,12 +64,18 @@ object TmdbClient {
         if (key in notFound) return@withContext null
 
         try {
-            val movieId = findMovie(query, year)
-            if (movieId == null) {
+            val match = findMovie(query, year)
+            if (match == null) {
                 notFound.add(key)
                 return@withContext null
             }
-            val details = get("/movie/$movieId", "append_to_response" to "credits")
+            val language = match.optString("original_language")
+            // Skipped movies (e.g. Indian) don't need the details request
+            if (MovieRanking.isExcludedLanguage(language)) {
+                return@withContext TmdbMovie(0.0, 0, 0.0, 0.0, "", "", language, emptyList())
+                    .also { cache[key] = it }
+            }
+            val details = get("/movie/${match.optInt("id")}", "append_to_response" to "credits")
             val cast = details.optJSONObject("credits")?.optJSONArray("cast")
             val castPopularity = if (cast == null || cast.length() == 0) {
                 0.0
@@ -70,10 +83,16 @@ object TmdbClient {
                 val count = minOf(TOP_CAST_COUNT, cast.length())
                 (0 until count).sumOf { cast.getJSONObject(it).optDouble("popularity", 0.0) } / count
             }
-            Popularity(
+            val countries = details.optJSONArray("origin_country")
+            TmdbMovie(
                 popularity = details.optDouble("popularity", 0.0),
                 voteCount = details.optInt("vote_count", 0),
-                castPopularity = castPopularity
+                voteAverage = details.optDouble("vote_average", 0.0),
+                castPopularity = castPopularity,
+                releaseDate = details.optString("release_date"),
+                imdbId = details.optString("imdb_id").takeIf { it.startsWith("tt") }.orEmpty(),
+                originalLanguage = details.optString("original_language", language),
+                originCountries = if (countries == null) emptyList() else (0 until countries.length()).map { countries.optString(it) }
             ).also { cache[key] = it }
         } catch (e: IOException) {
             offlineUntil = System.currentTimeMillis() + OFFLINE_BACKOFF_MS
@@ -84,7 +103,7 @@ object TmdbClient {
     }
 
     // Best search match: same release year (±1, release dates differ between countries), else the top result
-    private fun findMovie(query: String, year: Int): Int? {
+    private fun findMovie(query: String, year: Int): JSONObject? {
         val params = mutableListOf("query" to query, "include_adult" to "false")
         if (year > 0) params.add("year" to year.toString())
         var results = get("/search/movie", *params.toTypedArray()).optJSONArray("results")
@@ -102,7 +121,7 @@ object TmdbClient {
         } else {
             candidates.first()
         }
-        return match?.optInt("id")?.takeIf { it > 0 }
+        return match?.takeIf { it.optInt("id") > 0 }
     }
 
     private fun get(path: String, vararg params: Pair<String, String>): JSONObject {

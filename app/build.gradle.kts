@@ -34,11 +34,22 @@ android {
             "OPENSUBTITLES_API_KEY",
             "\"${secretsProperties.getProperty("OPENSUBTITLES_API_KEY", "")}\""
         )
-        // TMDB API key (or read access token) for the Popular movie filter; empty hides that filter
+        // TMDB API key (or read access token) for the ranked movie sorts; empty hides the sorts that need it
         buildConfigField(
             "String",
             "TMDB_API_KEY",
             "\"${secretsProperties.getProperty("TMDB_API_KEY", "")}\""
+        )
+        // OMDb API keys for award data, used in turn (each allows 1000 requests a day); empty hides the award sorts
+        buildConfigField(
+            "String",
+            "OMDB_API_KEY",
+            "\"${secretsProperties.getProperty("OMDB_API_KEY", "")}\""
+        )
+        buildConfigField(
+            "String",
+            "OMDB_API_KEY2",
+            "\"${secretsProperties.getProperty("OMDB_API_KEY2", "")}\""
         )
         
         // Add memory management options

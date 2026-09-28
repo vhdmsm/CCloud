@@ -10,6 +10,7 @@ import com.pira.ccloud.data.model.Genre
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.repository.GenreRepository
 import com.pira.ccloud.data.repository.MovieRepository
+import com.pira.ccloud.data.repository.OmdbClient
 import com.pira.ccloud.data.repository.RankedMovieRepository
 import com.pira.ccloud.data.repository.TmdbClient
 import com.pira.ccloud.utils.LanguageUtils
@@ -49,13 +50,13 @@ class MoviesViewModel : ViewModel() {
     var selectedFilterType by mutableStateOf(FilterType.DEFAULT)
         private set
     
-    // False when the Popular filter couldn't reach TMDB and shows movies in IMDB order instead
-    var popularityAvailable by mutableStateOf(true)
+    // Shown above the list when a ranked sort is missing TMDB or OMDb data
+    var rankingNotice by mutableStateOf<String?>(null)
         private set
     
-    // Popular needs a TMDB API key in the build
+    // Sorts whose API key isn't in the build are left out
     val filterTypes: List<FilterType> = FilterType.entries.filter {
-        it != FilterType.POPULAR || TmdbClient.isConfigured
+        (!it.needsTmdb || TmdbClient.isConfigured) && (!it.needsOmdb || OmdbClient.isConfigured)
     }
     
     private var loadJob: Job? = null
@@ -102,22 +103,19 @@ class MoviesViewModel : ViewModel() {
                 
                 val lastPage: Int
                 val hasMore: Boolean
-                val newMovies = when (selectedFilterType) {
-                    FilterType.TOP_PICKS, FilterType.POPULAR -> {
-                        val shownIds = if (page == 0) emptySet() else movies.map { it.id }.toSet()
-                        val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, shownIds)
-                        popularityAvailable = ranked.popularityAvailable
-                        lastPage = ranked.lastPage
-                        hasMore = ranked.hasMore
-                        ranked.movies
-                    }
-                    else -> {
-                        val result = repository.getMovies(page, selectedGenreId, selectedFilterType)
-                        popularityAvailable = true
-                        lastPage = page
-                        hasMore = result.isNotEmpty()
-                        result
-                    }
+                val newMovies = if (selectedFilterType.isRanked) {
+                    val shownIds = if (page == 0) emptySet() else movies.map { it.id }.toSet()
+                    val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, shownIds)
+                    rankingNotice = ranked.notice
+                    lastPage = ranked.lastPage
+                    hasMore = ranked.hasMore
+                    ranked.movies
+                } else {
+                    val result = repository.getMovies(page, selectedGenreId, selectedFilterType)
+                    rankingNotice = null
+                    lastPage = page
+                    hasMore = result.isNotEmpty()
+                    result
                 }
                 
                 // Filter out movies with Farsi titles
@@ -126,7 +124,7 @@ class MoviesViewModel : ViewModel() {
                 }
                 
                 // Ranked filters can return an empty batch while the server still has pages
-                canLoadMore = if (selectedFilterType == FilterType.TOP_PICKS || selectedFilterType == FilterType.POPULAR) {
+                canLoadMore = if (selectedFilterType.isRanked) {
                     hasMore
                 } else {
                     // If we get fewer movies than expected, we've reached the end
