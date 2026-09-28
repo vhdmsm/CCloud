@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import java.util.Calendar
 import kotlin.math.ln
+import kotlin.math.log10
 
 /**
  * Movies for the sorts the server can't do (see [FilterType.isRanked]). Each load reads the
@@ -61,7 +62,8 @@ class RankedMovieRepository(
 
         // Without movie data the sorts fall back to IMDB order
         val dataMissing = filterType.needsMovieData && batch.isNotEmpty() && batch.none { it.info != null }
-        val castMissing = filterType.needsCast && !dataMissing &&
+        // Only Famous Actors depends on the actors alone; the combined sorts do without them
+        val castMissing = filterType == FilterType.STAR_CAST && !dataMissing &&
             batch.isNotEmpty() && batch.none { it.info?.castPopularity != null }
         val omdbMissing = filterType.needsOmdb && !OmdbClient.isAvailable && batch.any { it.awards == null }
         val year = Calendar.getInstance().get(Calendar.YEAR)
@@ -238,6 +240,16 @@ object MovieRanking {
     // 1 for this year, down to 0 for RECENCY_YEARS ago and older
     private fun recency(year: Int, currentYear: Int): Double =
         ((year - (currentYear - RECENCY_YEARS)).toDouble() / RECENCY_YEARS).coerceIn(0.0, 1.0)
+
+    /**
+     * 0..1 from a Watchmode percentile, by how rare the rank is: popular movies crowd the top
+     * (Shawshank 99.992, Rental Family 99.854), so the last fraction of a percent matters most.
+     * Top 0.01% -> ~1, top 0.1% -> 0.75, top 1% -> 0.5, top 10% -> 0.25, 50th percentile -> 0.08.
+     */
+    fun percentileScore(percentile: Double): Double {
+        val topShare = (100.0 - percentile.coerceIn(0.0, 100.0)) + 0.01
+        return (log10(100.0 / topShare) / 4.0).coerceIn(0.0, 1.0)
+    }
 
     // 0 at 0, 1 at max and above
     private fun logScale(value: Double, max: Double): Double =

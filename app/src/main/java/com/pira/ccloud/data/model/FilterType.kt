@@ -9,7 +9,7 @@ enum class FilterType(
     val isRanked: Boolean = false,
     // Needs popularity or actors from Watchmode
     val needsMovieData: Boolean = false,
-    // Ranks by the lead actors, which costs extra Watchmode credits
+    // Ranks (partly) by the lead actors, which costs extra Watchmode credits the first time
     val needsCast: Boolean = false,
     // Needs award data: from the description when it names awards, else OMDb (limited daily
     // requests, and Watchmode for the IMDb id), so it only reads the newest-first list
@@ -29,6 +29,6 @@ enum class FilterType(
 
     // Combinations
     TOP_PICKS(isRanked = true),
-    POPULAR_CAST(isRanked = true, needsMovieData = true),
-    BEST_OVERALL(isRanked = true, needsMovieData = true, needsOmdb = true)
+    POPULAR_CAST(isRanked = true, needsMovieData = true, needsCast = true),
+    BEST_OVERALL(isRanked = true, needsMovieData = true, needsCast = true, needsOmdb = true)
 }

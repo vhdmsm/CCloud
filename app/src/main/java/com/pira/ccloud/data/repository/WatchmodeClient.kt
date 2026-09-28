@@ -77,8 +77,8 @@ object WatchmodeClient {
             }
             if (!stored.has("id")) return@withContext null
 
-            if (withCast && !stored.has("cast_popularity") && !MovieRanking.isExcludedLanguage(stored.optString("original_language"))) {
-                stored.put("cast_popularity", castPopularity(stored.getInt("id")))
+            if (withCast && !stored.has("cast_score") && !MovieRanking.isExcludedLanguage(stored.optString("original_language"))) {
+                stored.put("cast_score", castScore(stored.getInt("id")))
                 writeCache(key, stored.toString())
             }
             toInfo(stored)
@@ -90,18 +90,28 @@ object WatchmodeClient {
         }
     }
 
-    // The same year (±1, release dates differ between countries), else the first movie found
+    data class SearchResult(val id: Int, val type: String, val year: Int)
+
     private fun findMovie(query: String, year: Int): Int? {
         val results = get("/search/", "search_field" to "name", "search_value" to query, "types" to "movie")
             .optJSONArray("title_results") ?: return null
-        val movies = (0 until results.length()).map { results.getJSONObject(it) }
-            .filter { it.optString("type") == "movie" }
-        val match = if (year > 0) {
-            movies.firstOrNull { kotlin.math.abs(it.optInt("year") - year) <= 1 }
-        } else {
-            movies.firstOrNull()
-        }
-        return match?.optInt("id")?.takeIf { it > 0 }
+        return pickMovie(
+            (0 until results.length()).map { results.getJSONObject(it) }
+                .map { SearchResult(it.optInt("id"), it.optString("type"), it.optInt("year")) },
+            year
+        )
+    }
+
+    /**
+     * The search result of the same year (±1, release dates differ between countries). Watchmode
+     * files some films as "tv_movie" or "tv_special" (concerts, documentaries), so any type but a
+     * series is accepted, a "movie" first.
+     */
+    fun pickMovie(results: List<SearchResult>, year: Int): Int? {
+        val films = results.filter { it.id > 0 && !it.type.startsWith("tv_series") && it.type != "tv_miniseries" }
+            .sortedBy { if (it.type == "movie") 0 else 1 }
+        val match = if (year > 0) films.firstOrNull { kotlin.math.abs(it.year - year) <= 1 } else films.firstOrNull()
+        return match?.id
     }
 
     // Keeps only what the sorts use
@@ -116,8 +126,8 @@ object WatchmodeClient {
             .put("original_language", details.optString("original_language"))
     }
 
-    // Average popularity percentile (0..1) of the first billed actors; actors are cached on their own
-    private fun castPopularity(titleId: Int): Double {
+    // Average fame score (0..1) of the first billed actors; actors' percentiles are cached on their own
+    private fun castScore(titleId: Int): Double {
         val crew = get("/title/$titleId/cast-crew/").optJSONArray("__array") ?: return 0.0
         val actors = (0 until crew.length()).map { crew.getJSONObject(it) }
             .filter { it.optString("type").equals("Cast", ignoreCase = true) }
@@ -130,18 +140,18 @@ object WatchmodeClient {
             val percentile = readCache(personKey)?.toDoubleOrNull() ?: get("/person/$personId/")
                 .optDouble("relevance_percentile", 0.0)
                 .also { writeCache(personKey, it.toString()) }
-            percentile / 100.0
+            MovieRanking.percentileScore(percentile)
         } / actors.size
     }
 
     private fun toInfo(stored: JSONObject): MovieInfo {
-        val relevance = stored.optDouble("relevance_percentile", 0.0) / 100.0
+        val relevance = stored.optDouble("relevance_percentile", 0.0)
         return MovieInfo(
-            popularity = stored.optDouble("popularity_percentile", 0.0) / 100.0,
-            reach = relevance,
+            popularity = MovieRanking.percentileScore(stored.optDouble("popularity_percentile", 0.0)),
+            reach = MovieRanking.percentileScore(relevance),
             // Watchmode has no vote count; well-known movies' scores are trusted more
-            ratingConfidence = relevance,
-            castPopularity = if (stored.has("cast_popularity")) stored.getDouble("cast_popularity") else null,
+            ratingConfidence = relevance / 100.0,
+            castPopularity = if (stored.has("cast_score")) stored.getDouble("cast_score") else null,
             releaseDate = stored.optString("release_date"),
             imdbId = stored.optString("imdb_id"),
             originalLanguage = stored.optString("original_language")

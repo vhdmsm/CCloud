@@ -115,4 +115,30 @@ class MovieRankingTest {
         assertEquals(-1.0, MovieRanking.score(FilterType.STAR_CAST, noActors, currentYear), 0.0)
         assertEquals(listOf(2, 1), ranked(FilterType.STAR_CAST, noActors, starCast))
     }
+
+    @Test
+    fun percentileScoreSpreadsOutTheTop() {
+        // Real Watchmode popularity percentiles
+        val shawshank = MovieRanking.percentileScore(99.992)
+        val rentalFamily = MovieRanking.percentileScore(99.854)
+        val theBox = MovieRanking.percentileScore(87.762)
+        assertTrue(shawshank > 0.9)
+        assertTrue(shawshank - rentalFamily > 0.2)
+        assertTrue(rentalFamily - theBox > 0.4)
+        assertEquals(0.0, MovieRanking.percentileScore(0.0), 0.01)
+    }
+
+    @Test
+    fun picksTheFilmOfTheRightYearOfAnyNonSeriesType() {
+        fun result(id: Int, type: String, year: Int) = WatchmodeClient.SearchResult(id, type, year)
+        // "Rental Family": the 2025 film, not the 2018 one or the one without a year
+        assertEquals(1888121, WatchmodeClient.pickMovie(listOf(result(1888121, "movie", 2025), result(1892527, "movie", 2018), result(11006853, "movie", 0)), 2025))
+        // Concerts and documentaries are filed as tv_movie / tv_special
+        assertEquals(1158231, WatchmodeClient.pickMovie(listOf(result(1158231, "tv_movie", 2017)), 2017))
+        assertEquals(551522, WatchmodeClient.pickMovie(listOf(result(551522, "tv_special", 2022)), 2022))
+        // A series of the same name is skipped, and a movie beats a TV movie
+        assertEquals(2, WatchmodeClient.pickMovie(listOf(result(1, "tv_series", 2021), result(2, "movie", 2021)), 2021))
+        assertEquals(3, WatchmodeClient.pickMovie(listOf(result(4, "tv_movie", 2021), result(3, "movie", 2021)), 2021))
+        assertEquals(null, WatchmodeClient.pickMovie(listOf(result(1, "tv_series", 2021)), 2021))
+    }
 }
