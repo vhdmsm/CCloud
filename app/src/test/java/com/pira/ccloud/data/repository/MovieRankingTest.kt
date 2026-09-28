@@ -190,9 +190,19 @@ class MovieRankingTest {
         val bigWinner = none.copy(awards = OmdbClient.parseAwards("Won 3 Oscars. 60 wins & 150 nominations total"))
         val scoreNone = MovieRanking.bestOverallScore(none, currentYear)
         assertTrue(MovieRanking.bestOverallScore(oneNomination, currentYear) >= scoreNone)
-        // A big winner scores with the awards weighed in
-        assertFalse(MovieRanking.bestOverallParts(bigWinner, currentYear).awardsSpread)
-        assertTrue(MovieRanking.bestOverallScore(bigWinner, currentYear) > scoreNone)
+        // Awards add on top of the spread weights
+        val winnerParts = MovieRanking.bestOverallParts(bigWinner, currentYear)
+        assertTrue(winnerParts.awardsSpread)
+        assertTrue(winnerParts.awards > 0.1)
+        assertEquals(scoreNone + winnerParts.awards, winnerParts.total, 1e-9)
+    }
+
+    @Test
+    fun thisYearsAwardsCountOnTopOfTheSpreadWeights() {
+        // Real data: Obsession (IMDB 7.9, 7 wins & 15 nominations, lesser-known young cast) vs Forgotten Island (7.7, no awards)
+        val obsession = MovieFacts(movie(1, 7.9, currentYear), info(popularity = 99.998, relevance = 99.999, cast = 0.464), OmdbClient.parseAwards("7 wins & 15 nominations total"))
+        val forgottenIsland = MovieFacts(movie(2, 7.7, currentYear), info(popularity = 99.996, relevance = 99.873, cast = 0.786), OmdbClient.parseAwards("N/A"))
+        assertEquals(listOf(1, 2), ranked(FilterType.BEST_OVERALL, obsession, forgottenIsland))
     }
 
     @Test

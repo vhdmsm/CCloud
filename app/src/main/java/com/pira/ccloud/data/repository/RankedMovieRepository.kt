@@ -266,9 +266,9 @@ object MovieRanking {
      * Missing parts count as zero. The release year isn't weighed: the list is read one year at a
      * time, so the movies ranked together are from the same year already.
      *
-     * This year's movies haven't had time to win awards, so they may spread the awards' share evenly
-     * over the other three instead. Whichever is higher counts, so an early nomination never lowers
-     * the score.
+     * This year's movies haven't had time to win awards, so the awards' share is spread evenly over
+     * the other three, and awards they already have are added on top (at the awards' weight): missing
+     * awards cost nothing, early awards still count.
      */
     fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
         bestOverallParts(facts, currentYear).total
@@ -279,7 +279,7 @@ object MovieRanking {
         val awards: Double,
         val popularity: Double,
         val actors: Double,
-        // A movie of this year with the awards' share spread over the rest
+        // A movie of this year: the awards' share spread over the rest, its awards added on top
         val awardsSpread: Boolean = false
     ) {
         val total: Double get() = rating + awards + popularity + actors
@@ -299,14 +299,13 @@ object MovieRanking {
         )
         if (facts.movie.year < currentYear) return withAwards
         val share = AWARDS_WEIGHT / 3
-        val spread = BestOverallParts(
+        return BestOverallParts(
             rating = (RATING_WEIGHT + share) * rating,
-            awards = 0.0,
+            awards = withAwards.awards,
             popularity = (POPULARITY_WEIGHT + share) * popularity,
             actors = (ACTORS_WEIGHT + share) * actors,
             awardsSpread = true
         )
-        return if (spread.total > withAwards.total) spread else withAwards
     }
 
     // "2024-03-01" -> 20240301; the year alone when the date is unknown
