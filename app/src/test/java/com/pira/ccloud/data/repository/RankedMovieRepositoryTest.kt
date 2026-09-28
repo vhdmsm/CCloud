@@ -151,4 +151,16 @@ class RankedMovieRepositoryTest {
         val second = repo.getRankedMovies(first.lastPage + 1, 0, FilterType.NEWEST, first.handledIds)
         assertEquals(setOf(31, 32), second.movies.map { it.id }.toSet())
     }
+
+    @Test
+    fun looksUpOnlyTheBestRatedOfAYearThenMovesOn() = runBlocking {
+        // 160 movies of 2026 over 8 pages (ratings 6.0 up to 9.2), then 2025
+        val movies2026 = (1..160).map { movie(it, 2026).copy(imdb = 6.0 + it * 0.02) }
+        val pages = movies2026.chunked(20) + listOf(listOf(movie(500, 2025)))
+        val repo = repository(pages, mergeRecentYears = true)
+        val result = repo.getRankedMovies(0, 0, FilterType.NEWEST, emptySet())
+        val ids = result.movies.map { it.id }.toSet()
+        // The 150 best rated of 2026, then 2025
+        assertEquals((11..160).toSet() + 500, ids)
+    }
 }

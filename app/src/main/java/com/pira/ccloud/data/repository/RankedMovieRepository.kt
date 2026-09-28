@@ -142,10 +142,16 @@ class RankedMovieRepository(
                     currentPage++
                 }
                 currentPage = lastPage + 1
-                if (candidates.isEmpty()) continue
+                // Only the year's best rated on the site get looked up; the rest are skipped
+                val lookedUp = if (candidates.size > MAX_TITLES_PER_YEAR) {
+                    candidates.sortedByDescending { it.imdb }.take(MAX_TITLES_PER_YEAR)
+                } else {
+                    candidates
+                }
+                if (lookedUp.isEmpty()) continue
                 yearsRanked++
                 val before = ranked.toList()
-                ranked += rankGroup(candidates, filterType, before, year) { facts, progress ->
+                ranked += rankGroup(lookedUp, filterType, before, year) { facts, progress ->
                     onUpdate(result(facts, progress))
                 }
                 // The rest of a year cut by the page limit comes first on the next load, not an older year now
@@ -325,6 +331,9 @@ class RankedMovieRepository(
         // requests of one load)
         const val MAX_PAGES_PER_YEAR = 30
         const val MAX_YEARS_PER_LOAD = 3
+        // Titles of one year that get looked up, the best rated on the site (a limit on credits
+        // while testing)
+        const val MAX_TITLES_PER_YEAR = 150
         const val UPDATE_INTERVAL_MS = 1_000L
         const val PAGES_READ_AHEAD = 3
     }
