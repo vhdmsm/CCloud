@@ -17,6 +17,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.Calendar
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -80,6 +81,33 @@ object WatchmodeClient {
         val total = known.sumOf { it.first } + unknownKeys * typicalQuota
         val left = known.sumOf { (it.first - it.second).coerceAtLeast(0) } + unknownKeys * typicalQuota
         return left.toDouble() / total
+    }
+
+    /** e.g. "credits left this month: 10,848 of 12,500"; notes keys that haven't answered yet. Null before any has. */
+    val creditsText: String?
+        get() {
+            val known = keys.mapNotNull { keyQuota[it] }.filter { it.first > 0 }
+            if (known.isEmpty()) return null
+            val left = known.sumOf { (it.first - it.second).coerceAtLeast(0) }
+            val total = known.sumOf { it.first }
+            val text = String.format(Locale.US, "credits left this month: %,d of %,d", left, total)
+            return if (known.size < keys.size) "$text (${known.size} of ${keys.size} keys)" else text
+        }
+
+    /** Reads each key's monthly quota and use from Watchmode's status page, which costs no credits. */
+    suspend fun refreshQuotas() = withContext(Dispatchers.IO) {
+        for (key in keys) {
+            try {
+                val request = Request.Builder().url("$BASE_URL/status/").header("X-API-Key", key).build()
+                client.newCall(request).execute().use { response ->
+                    val quota = response.header("X-Account-Quota")?.toLongOrNull()
+                    val used = response.header("X-Account-Quota-Used")?.toLongOrNull()
+                    if (quota != null && used != null) keyQuota[key] = quota to used
+                }
+            } catch (e: Exception) {
+                // Known after its next lookup instead
+            }
+        }
     }
 
     // True when credits are low and only this year's movies get new lookups

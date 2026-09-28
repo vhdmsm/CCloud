@@ -121,6 +121,8 @@ class RankedMovieRepository(
                 val candidates = mutableListOf<Movie>()
                 var year: Int? = null
                 val firstPage = currentPage
+                // True when the page limit stopped the year before its end
+                var yearCut = false
                 while (true) {
                     val movies = pageAt(currentPage)
                     hasMore = movies.isNotEmpty()
@@ -130,7 +132,11 @@ class RankedMovieRepository(
                     sameYear.forEach { seen.add(it.id) }
                     candidates += sameYear.filter { MovieRanking.isCandidate(it, filterType) }
                     lastPage = if (older.isNotEmpty()) currentPage - 1 else currentPage
-                    if (older.isNotEmpty() || !hasMore || currentPage - firstPage + 1 >= MAX_PAGES_PER_YEAR) break
+                    if (older.isNotEmpty() || !hasMore) break
+                    if (currentPage - firstPage + 1 >= MAX_PAGES_PER_YEAR) {
+                        yearCut = true
+                        break
+                    }
                     currentPage++
                 }
                 currentPage = lastPage + 1
@@ -140,6 +146,8 @@ class RankedMovieRepository(
                 ranked += rankGroup(candidates, filterType, before, year) { facts, progress ->
                     onUpdate(result(facts, progress))
                 }
+                // The rest of a year cut by the page limit comes first on the next load, not an older year now
+                if (yearCut) break
                 // Shown while the next year's list is read
                 if (hasMore && yearsRanked < yearsInBatch) onUpdate(result(ranked, "Reading older movies…"))
             }
@@ -245,7 +253,11 @@ class RankedMovieRepository(
                 "Watchmode credits are low this month: only this year's movies get new data"
             else -> null
         }
-        val attribution = if (batch.any { it.info != null }) "Movie data from Watchmode" else null
+        val attribution = if (batch.any { it.info != null }) {
+            listOfNotNull("Movie data from Watchmode", WatchmodeClient.creditsText).joinToString(" · ")
+        } else {
+            null
+        }
         // The list shows the current IMDb rating where OMDb gave one
         val movies = ranked.map { facts -> facts.rating?.let { facts.movie.copy(imdb = it.imdb) } ?: facts.movie }
         return RankedPage(movies, lastPage, hasMore, handledIds, notice, attribution, progress)
@@ -299,14 +311,17 @@ class RankedMovieRepository(
         } else {
             null
         }
+        // The site's score let it in, but the current one is below the minimum
+        if (details?.rating?.let { MovieRanking.isLowRated(it.imdb) } == true) return null
         return MovieFacts(movie, info, MovieRanking.pickAwards(details?.awards, describedAwards), details?.rating)
     }
 
     private companion object {
         const val MIN_BATCH_SIZE = 12
         const val MAX_PAGES_PER_LOAD = 3
-        // A year with more pages than this is ranked in parts (a limit on the requests of one load)
-        const val MAX_PAGES_PER_YEAR = 10
+        // A year with more pages than this (about 700 movies) is ranked in parts (a limit on the
+        // requests of one load)
+        const val MAX_PAGES_PER_YEAR = 30
         const val MAX_YEARS_PER_LOAD = 3
         const val UPDATE_INTERVAL_MS = 1_000L
         const val PAGES_READ_AHEAD = 3
@@ -316,6 +331,8 @@ class RankedMovieRepository(
 object MovieRanking {
     // Top Picks only shows movies rated at least this on IMDB
     const val TOP_PICKS_MIN_IMDB = 6.5
+    // The ranked sorts leave out movies rated below this on IMDB
+    const val MIN_IMDB = 5.5
     // Movies from the last RECENCY_YEARS get up to RECENCY_BONUS extra points, newest the most
     private const val RECENCY_YEARS = 25
     private const val RECENCY_BONUS = 1.0
@@ -337,12 +354,17 @@ object MovieRanking {
             if (!LanguageUtils.shouldDisplayTitle(movie.title)) return false
             if (movie.country.any { it.title.trim().lowercase() in excludedCountryNames }) return false
             if (movie.genres.any { it.title.trim() in excludedGenreNames }) return false
+            // Weakly rated movies are left out (movies not rated yet stay)
+            if (isLowRated(movie.imdb)) return false
         }
         return when (filterType) {
             FilterType.TOP_PICKS -> movie.imdb in TOP_PICKS_MIN_IMDB..10.0 && movie.year > 0
             else -> true
         }
     }
+
+    /** Rated, and below [MIN_IMDB]; 0 means not rated yet. */
+    fun isLowRated(imdb: Double): Boolean = imdb > 0.0 && imdb < MIN_IMDB
 
     fun isExcludedLanguage(language: String): Boolean = language.lowercase() in excludedLanguages
 

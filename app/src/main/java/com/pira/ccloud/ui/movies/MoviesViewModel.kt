@@ -77,6 +77,8 @@ class MoviesViewModel : ViewModel() {
     init {
         loadGenres()
         loadMovies()
+        // How much of the month's Watchmode credits is left, shown under the ranked sorts (no credits used)
+        if (WatchmodeClient.isConfigured) viewModelScope.launch { WatchmodeClient.refreshQuotas() }
     }
     
     fun loadGenres() {

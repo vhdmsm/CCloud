@@ -139,4 +139,16 @@ class RankedMovieRepositoryTest {
         assertEquals(listOf(3, 2, 1, 4), result.movies.map { it.id })
         assertEquals(0, result.lastPage)
     }
+
+    @Test
+    fun aYearLongerThanOneLoadIsFinishedBeforeAnOlderOne() = runBlocking {
+        // 2026 runs past the page limit of one load (30 pages here); 2025 comes after it
+        val pages = (0 until 32).map { listOf(movie(it + 1, 2026)) } + listOf(listOf(movie(100, 2025)))
+        val repo = repository(pages, mergeRecentYears = true)
+        val first = repo.getRankedMovies(0, 0, FilterType.NEWEST, emptySet())
+        // Only 2026, not the next 2026 pages treated as "last year" nor 2025
+        assertEquals((1..30).toSet(), first.movies.map { it.id }.toSet())
+        val second = repo.getRankedMovies(first.lastPage + 1, 0, FilterType.NEWEST, first.handledIds)
+        assertEquals(setOf(31, 32), second.movies.map { it.id }.toSet())
+    }
 }

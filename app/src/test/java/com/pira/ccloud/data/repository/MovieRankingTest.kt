@@ -265,4 +265,15 @@ class MovieRankingTest {
         assertEquals(OmdbClient.parseAwards("N/A"), MovieRanking.pickAwards(OmdbClient.parseAwards("N/A"), null))
         assertNull(MovieRanking.pickAwards(null, null))
     }
+
+    @Test
+    fun leavesOutMoviesRatedBelowFiveAndAHalf() {
+        assertFalse(MovieRanking.isCandidate(movie(1, 5.4, 2026), FilterType.BEST_OVERALL))
+        assertFalse(MovieRanking.isCandidate(movie(1, 3.0, 2026), FilterType.NEWEST))
+        assertTrue(MovieRanking.isCandidate(movie(1, 5.5, 2026), FilterType.BEST_OVERALL))
+        // Not rated yet: kept
+        assertTrue(MovieRanking.isCandidate(movie(1, 0.0, 2026), FilterType.BEST_OVERALL))
+        // The server's own sorts show everything
+        assertTrue(MovieRanking.isCandidate(movie(1, 4.0, 2026), FilterType.BY_YEAR))
+    }
 }
