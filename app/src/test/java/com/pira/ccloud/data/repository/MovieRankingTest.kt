@@ -134,7 +134,7 @@ class MovieRankingTest {
         val facts = MovieFacts(movie(1, 7.9, currentYear), info(popularity = 99.996, relevance = 99.873, cast = 0.5), null)
         val parts = MovieRanking.bestOverallParts(facts, currentYear)
         assertEquals(MovieRanking.bestOverallScore(facts, currentYear), parts.total, 1e-9)
-        assertEquals(0.10, parts.recency, 1e-9)
+        assertEquals(0.15, parts.recency, 1e-9)
         assertEquals(0.0, parts.awards, 1e-9)
     }
 
