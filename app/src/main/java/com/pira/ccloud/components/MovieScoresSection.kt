@@ -62,12 +62,12 @@ fun MovieScoresSection(movie: Movie, modifier: Modifier = Modifier) {
                 }
             )
             if (info != null) {
-                ScoreRow("Popularity", topShare(info.popularityPercentile) + format("  (score %.2f)", info.popularity))
-                ScoreRow("How well known", topShare(info.relevancePercentile) + format("  (score %.2f)", info.reach))
+                ScoreRow("Popularity", percentileText(info.popularityPercentile) + format("  (score %.2f)", info.popularity))
+                ScoreRow("How well known", percentileText(info.relevancePercentile) + format("  (score %.2f)", info.reach))
                 if (info.actors.isNotEmpty()) {
                     ScoreRow(
                         "Lead actors",
-                        info.actors.joinToString("\n") { "${it.name}: ${topShare(it.percentile)}" } +
+                        info.actors.joinToString("\n") { "${it.name}: ${percentileText(it.percentile)}" } +
                             format("\n(score %.2f)", info.castPopularity ?: 0.0)
                     )
                 }
@@ -133,15 +133,12 @@ private fun awardsText(awards: OmdbClient.Awards?, fromDescription: Boolean): St
     return parts.joinToString(" · ") + if (fromDescription) "  (description)" else "  (OMDb)"
 }
 
-// "top 0.15%" from a Watchmode percentile of 99.85
-private fun topShare(percentile: Double): String {
-    if (percentile <= 0.0) return "—"
-    val share = 100.0 - percentile
-    return when {
-        share < 0.1 -> format("top %.3f%%", share)
-        share < 10 -> format("top %.1f%%", share)
-        else -> format("top %.0f%%", share)
-    }
+// Watchmode's percentile out of 100 (100 = the very top), with the decimals that matter near the top
+private fun percentileText(percentile: Double): String = when {
+    percentile <= 0.0 -> "—"
+    percentile >= 100.0 -> "100 / 100 (the very top)"
+    percentile >= 99.0 -> format("%.3f / 100", percentile)
+    else -> format("%.1f / 100", percentile)
 }
 
 private fun format(pattern: String, vararg args: Any): String = String.format(Locale.US, pattern, *args)

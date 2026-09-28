@@ -194,4 +194,17 @@ class MovieRankingTest {
         assertFalse(MovieRanking.bestOverallParts(bigWinner, currentYear).awardsSpread)
         assertTrue(MovieRanking.bestOverallScore(bigWinner, currentYear) > scoreNone)
     }
+
+    @Test
+    fun aLittleKnownCoStarDoesNotPullDownTheStars() {
+        // Real Watchmode percentiles of the three lead actors
+        val heartOfTheBeast = MovieRanking.castScore(listOf(100.0, 100.0, 26.8)) // Brad Pitt, J.K. Simmons, Uber the dog
+        val theInvite = MovieRanking.castScore(listOf(100.0, 100.0, 99.9))       // Seth Rogen, Olivia Wilde, Penélope Cruz
+        val forgottenIsland = MovieRanking.castScore(listOf(83.1, 94.1, 100.0))  // Liza Soberano, H.E.R., Dave Franco
+        assertTrue(heartOfTheBeast > 0.8)
+        assertTrue(theInvite > heartOfTheBeast)
+        assertTrue(heartOfTheBeast > forgottenIsland)
+        assertEquals(1.0, MovieRanking.castScore(listOf(100.0)), 1e-9)
+        assertEquals(0.0, MovieRanking.castScore(emptyList()), 1e-9)
+    }
 }

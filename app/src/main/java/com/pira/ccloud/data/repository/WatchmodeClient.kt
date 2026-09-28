@@ -114,7 +114,6 @@ object WatchmodeClient {
             ) {
                 val actors = leadActors(stored.getInt("id"))
                 stored.put("cast", JSONArray(actors.map { JSONObject().put("name", it.name).put("percentile", it.percentile) }))
-                stored.put("cast_score", if (actors.isEmpty()) 0.0 else actors.sumOf { MovieRanking.percentileScore(it.percentile) } / actors.size)
                 writeCache(key, stored.toString())
             }
             toInfo(stored)
@@ -188,7 +187,12 @@ object WatchmodeClient {
             reach = MovieRanking.percentileScore(relevance),
             // Watchmode has no vote count; well-known movies' scores are trusted more
             ratingConfidence = relevance / 100.0,
-            castPopularity = if (stored.has("cast_score")) stored.getDouble("cast_score") else null,
+            // Scored from the cached actors, so a change in scoring needs no new requests
+            castPopularity = when {
+                cast != null -> MovieRanking.castScore((0 until cast.length()).map { cast.getJSONObject(it).optDouble("percentile", 0.0) })
+                stored.has("cast_score") -> stored.getDouble("cast_score")
+                else -> null
+            },
             releaseDate = stored.optString("release_date"),
             imdbId = stored.optString("imdb_id"),
             originalLanguage = stored.optString("original_language"),
