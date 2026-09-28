@@ -59,7 +59,7 @@ class RankedMovieRepository(
     }
 
     // Parallel requests allowed to each service, shared by the loads of this list
-    private val watchmodePermits = Semaphore(4)
+    private val watchmodePermits = Semaphore(6)
     private val omdbPermits = Semaphore(6)
 
     /**

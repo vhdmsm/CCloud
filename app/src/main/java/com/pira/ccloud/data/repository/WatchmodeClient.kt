@@ -35,10 +35,11 @@ object WatchmodeClient {
     private const val BLOCKED_BACKOFF_MS = 6L * 60 * 60 * 1000
     // Too many requests this minute, or no connection
     private const val SHORT_BACKOFF_MS = 60_000L
+    // The free plan allows 120 requests a minute per key; each key is kept a little below that
+    private const val REQUESTS_PER_MINUTE = 110
+    private const val MINUTE_MS = 60_000L
     // A lookup waits this long at most for a key that hit its per-minute limit, rather than giving up
     private const val MAX_RATE_WAIT_MS = SHORT_BACKOFF_MS + 5_000L
-    // Tries of one request when keys keep hitting their per-minute limit
-    private const val REQUEST_TRIES = 3
     // Below this share of the month's credits left, only this year's movies get new lookups
     private const val RESERVE_SHARE = 0.2
 
@@ -222,27 +223,47 @@ object WatchmodeClient {
     }
 
     /**
-     * [get] that waits for a key at its per-minute limit (up to a minute) and tries again, instead
-     * of failing: a burst of lookups is slowed down, not left without data.
+     * [get] that waits for a key with room in its per-minute limit (up to a minute) and tries again,
+     * instead of failing: a burst of lookups is slowed down, not left without data.
      */
     private suspend fun call(path: String, vararg params: Pair<String, String>): JSONObject {
-        repeat(REQUEST_TRIES - 1) {
+        // Gives up only when no key will have room soon (rejected, out of quota, or offline)
+        while (true) {
             if (!waitForKey()) throw NoUsableKeyException()
             try {
                 return get(path, *params)
             } catch (e: NoUsableKeyException) {
-                // Every key hit a limit meanwhile: wait and try again
+                // Other lookups took the free room meanwhile: wait for the next
             }
         }
-        if (!waitForKey()) throw NoUsableKeyException()
-        return get(path, *params)
     }
 
-    // True when a key can be used now, after waiting for one at its per-minute limit
+    // Times of each key's requests in the last minute, to spread requests over the keys and keep
+    // each under its per-minute limit
+    private val recentRequests = HashMap<String, ArrayDeque<Long>>()
+
+    // When [key] can take a request: after a block ends and once its last minute has room
+    private fun readyAt(key: String, now: Long): Long = synchronized(recentRequests) {
+        val times = recentRequests.getOrPut(key) { ArrayDeque() }
+        while (times.isNotEmpty() && times.first() <= now - MINUTE_MS) times.removeFirst()
+        val roomAt = if (times.size < REQUESTS_PER_MINUTE) now else times.first() + MINUTE_MS
+        maxOf(roomAt, keyBlockedUntil[key] ?: 0L)
+    }
+
+    /** The key with the most room right now (so requests go round the keys), counted as used; null when none has room. */
+    private fun takeKey(): String? = synchronized(recentRequests) {
+        val now = System.currentTimeMillis()
+        val key = keys.filter { readyAt(it, now) <= now }
+            .minByOrNull { recentRequests[it]?.size ?: 0 } ?: return null
+        recentRequests.getValue(key).addLast(now)
+        key
+    }
+
+    // True when a key can be used now, after waiting (up to about a minute) for one with room
     private suspend fun waitForKey(): Boolean {
         val now = System.currentTimeMillis()
         if (now < offlineUntil) return false
-        val soonest = keys.minOfOrNull { keyBlockedUntil[it] ?: 0L } ?: return false
+        val soonest = keys.minOfOrNull { readyAt(it, now) } ?: return false
         if (soonest <= now) return true
         if (soonest - now > MAX_RATE_WAIT_MS) return false
         delay(soonest - now)
@@ -259,14 +280,14 @@ object WatchmodeClient {
 
     private class NoUsableKeyException : IllegalStateException("No Watchmode key is usable right now")
 
-    // Tries the keys in turn, skipping ones that are rejected or out of quota.
-    // Arrays (cast-crew) come back wrapped as {"__array": [...]}
+    // Sends the request with the key that has the most room, moving to another key when one is
+    // rejected, out of quota or at its limit. Arrays (cast-crew) come back wrapped as {"__array": [...]}
     private fun get(path: String, vararg params: Pair<String, String>): JSONObject {
         val url = "$BASE_URL$path".toHttpUrl().newBuilder()
             .apply { params.forEach { (name, value) -> addQueryParameter(name, value) } }
             .build()
-        for (key in keys) {
-            if ((keyBlockedUntil[key] ?: 0L) > System.currentTimeMillis()) continue
+        repeat(keys.size) {
+            val key = takeKey() ?: throw NoUsableKeyException()
             val request = Request.Builder()
                 .url(url)
                 .header("X-API-Key", key)
@@ -277,8 +298,6 @@ object WatchmodeClient {
                 val quota = response.header("X-Account-Quota")?.toLongOrNull()
                 val used = response.header("X-Account-Quota-Used")?.toLongOrNull()
                 if (quota != null && used != null) keyQuota[key] = quota to used
-                // Rests the key before it runs into its per-minute limit
-                if (response.header("X-RateLimit-Remaining")?.toLongOrNull() == 0L) blockKey(key, SHORT_BACKOFF_MS)
                 when (response.code) {
                     200 -> return if (body.trimStart().startsWith("[")) {
                         JSONObject().put("__array", JSONArray(body))
