@@ -304,6 +304,8 @@ class MovieRankingTest {
         assertEquals(2, WatchmodeClient.pickSeries(listOf(old, new), 2026, "Shogun"))
         // Only the 1980 one: not that series
         assertNull(WatchmodeClient.pickSeries(listOf(old), 2024, "Shogun"))
+        val gambit = WatchmodeClient.SearchResult(3, "tv_miniseries", 2020, "The Queen's Gambit")
+        assertEquals(3, WatchmodeClient.pickSeries(listOf(gambit), 2025, "The Queens Gambit"))
     }
 
     @Test
@@ -374,5 +376,8 @@ class MovieRankingTest {
         assertEquals(null, popularity.score("The White Lotus", 2030))
         assertEquals(null, popularity.score("Unknown Show", 2024))
         assertEquals("the white lotus", SeriesPopularity.normalize("The White Lotus (2021)"))
+        // The site leaves out apostrophes
+        assertEquals(SeriesPopularity.normalize("The Queen’s Gambit"), SeriesPopularity.normalize("The Queens Gambit"))
+        assertEquals(0.5, SeriesPopularity(listOf("Ted" to 2020, "The Queen's Gambit" to 2020)).score("The Queens Gambit", 2020)!!, 1e-9)
     }
 }

@@ -30,11 +30,15 @@ class SeriesPopularity(titles: List<Pair<String, Int>>) {
     companion object {
         private const val MAX_YEARS_BEFORE = 5
 
-        /** Lowercase letters and digits only, without accents or a "(2024)" year: "Shōgun" -> "shogun". */
+        /**
+         * Lowercase letters and digits only, without accents, apostrophes (the site writes "The
+         * Queens Gambit") or a "(2024)" year: "Shōgun" -> "shogun", "The Queen's Gambit" -> "the queens gambit".
+         */
         fun normalize(title: String): String {
             val withoutYear = title.replace(Regex("\\((19|20)\\d{2}\\)"), " ")
             return Normalizer.normalize(withoutYear, Normalizer.Form.NFD)
                 .replace(Regex("\\p{M}+"), "")
+                .replace(Regex("['’ʼ`]"), "")
                 .lowercase()
                 .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
                 .trim()
