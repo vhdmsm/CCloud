@@ -45,6 +45,8 @@ object WatchmodeClient {
     private const val MAX_RATE_WAIT_MS = SHORT_BACKOFF_MS + 5_000L
     // Below this share of the month's credits left, only this year's movies get new lookups
     private const val RESERVE_SHARE = 0.2
+    // Years a series may run before the year the site lists it by
+    private const val MAX_SEASONS_SPAN = 10
     // The most popular series list: pages of 250 read (a credit each) and how long it's kept
     private const val POPULAR_SERIES_PAGES = 12
     private const val POPULAR_SERIES_TTL_MS = 7L * 24 * 60 * 60 * 1000
@@ -146,7 +148,7 @@ object WatchmodeClient {
         val mayLookUp = !cachedOnly && isAvailableSoon && allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare, DataUsage.keepsCreditReserve)
 
         val stored = try {
-            readCache(key)?.let { JSONObject(it) } ?: run {
+            readCache(key)?.let { JSONObject(it) }?.takeUnless { series && isOlderNamesake(it, year) } ?: run {
                 if (!mayLookUp) return@withContext null
                 val id = findTitle(query, year, series)
                 (if (id == null) JSONObject() else details(id)).also { writeCache(key, it.toString()) }
@@ -239,6 +241,13 @@ object WatchmodeClient {
             row.optString(0).takeIf { it.isNotBlank() }?.let { it to row.optInt(1) }
         }
 
+    // A series cached before [pickSeries] skipped older series of the same name (it started long
+    // before the site's year), looked up again
+    private fun isOlderNamesake(stored: JSONObject, year: Int): Boolean {
+        val started = stored.optString("release_date").take(4).toIntOrNull() ?: return false
+        return year > 0 && started < year - MAX_SEASONS_SPAN
+    }
+
     data class SearchResult(val id: Int, val type: String, val year: Int, val name: String = "")
 
     private suspend fun findTitle(query: String, year: Int, series: Boolean): Int? {
@@ -250,16 +259,16 @@ object WatchmodeClient {
     }
 
     /**
-     * The series with this name that started in [year] or before, the closest first: the site may
-     * list a series by a later season's year, Watchmode by its first. Without a name match, one
-     * that started within a year of [year].
+     * The series with this name (accents aside: "Shogun" is "Shōgun") that started in [year] or up
+     * to [MAX_SEASONS_SPAN] years before, the closest first: the site may list a series by a later
+     * season's year, Watchmode by its first. An older series of the same name (the 1980 "Shogun")
+     * isn't taken. Without a name match, one that started within a year of [year].
      */
     fun pickSeries(results: List<SearchResult>, year: Int, query: String): Int? {
         val shows = results.filter { it.id > 0 && (it.type.startsWith("tv_series") || it.type == "tv_miniseries") }
-        fun normal(name: String) = name.lowercase().replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
-        val named = shows.filter { normal(it.name) == normal(query) }
+        val named = shows.filter { SeriesPopularity.normalize(it.name) == SeriesPopularity.normalize(query) }
         val byName = if (year > 0) {
-            named.filter { it.year in 1..(year + 1) }.maxByOrNull { it.year }
+            named.filter { it.year in (year - MAX_SEASONS_SPAN)..(year + 1) }.maxByOrNull { it.year }
         } else {
             named.firstOrNull()
         }

@@ -65,7 +65,10 @@ class RankedMovieRepository(
         val info: MovieInfo?,
         val awards: OmdbClient.Awards?,
         // IMDb's current rating from OMDb
-        val rating: OmdbClient.Rating? = null
+        val rating: OmdbClient.Rating? = null,
+        // A series OMDb answered for without an IMDb rating (too new to have votes): the site's score
+        // isn't trusted then
+        val unrated: Boolean = false
     ) {
         // The current IMDb rating, else the server's (from when the movie was added)
         val imdb: Double get() = rating?.imdb ?: movie.imdb
@@ -439,7 +442,10 @@ class RankedMovieRepository(
         }
         // The site's score let it in, but the current one is below the minimum
         if (details?.rating?.let { MovieRanking.isLowRated(it.imdb) } == true) return null
-        return MovieFacts(movie, info, MovieRanking.pickAwards(details?.awards, describedAwards), details?.rating)
+        return MovieFacts(
+            movie, info, MovieRanking.pickAwards(details?.awards, describedAwards), details?.rating,
+            unrated = series && details != null && details.rating == null
+        )
     }
 
     private companion object {
@@ -530,9 +536,11 @@ object MovieRanking {
 
     /**
      * 0..1: how far the IMDB score can be trusted. From the number of IMDb votes when OMDb gave it
-     * (10,000 votes -> 0.5, 100,000 -> 0.91), else from how well known Watchmode says the movie is.
+     * (10,000 votes -> 0.5, 100,000 -> 0.91), else from how well known Watchmode says the movie is;
+     * none for a series IMDb has no rating for yet.
      */
     fun ratingConfidence(facts: RankedMovieRepository.MovieFacts): Double {
+        if (facts.unrated) return 0.0
         val votes = facts.rating?.votes ?: 0
         if (votes > 0) return votes / (votes + RATING_VOTES_PRIOR)
         return facts.info?.ratingConfidence ?: 0.0
@@ -583,9 +591,9 @@ object MovieRanking {
     fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
         bestOverallParts(facts, currentYear).total
 
-    // Series Best Overall: unlike movies, a series' start year weighs a lot (newer shows first);
-    // the movies' Best Overall (quality) is the rest
-    const val SERIES_START_YEAR_WEIGHT = 0.4
+    // Series Best Overall: unlike movies, a series' start year is weighed in (newer shows first
+    // among similar ones; at 0.4 a mediocre new series beat Severance); the quality is the rest
+    const val SERIES_START_YEAR_WEIGHT = 0.2
     // Series that started before this aren't listed; it counts 0 for the start year, this year 1
     const val SERIES_MIN_START_YEAR = 2019
 
@@ -596,9 +604,22 @@ object MovieRanking {
         return ((year - SERIES_MIN_START_YEAR).toDouble() / span).coerceIn(0.0, 1.0)
     }
 
-    /** Series Best Overall: quality (the movies' Best Overall) with the start year weighed in. */
+    /**
+     * A series' quality: the movies' Best Overall, except that a recent series (whose awards'
+     * share is spread over the rest) doesn't get its awards on top as well: it gets the better of
+     * the two ways, never more than 1. Its newness is weighed in by the start year already.
+     */
+    fun seriesQualityParts(facts: RankedMovieRepository.MovieFacts, currentYear: Int): BestOverallParts {
+        val parts = bestOverallParts(facts, currentYear)
+        if (!parts.awardsSpread) return parts
+        val spreadOnly = parts.copy(awards = 0.0)
+        val withAwards = bestOverallParts(facts, currentYear, spreadAwards = false)
+        return if (withAwards.total >= spreadOnly.total) withAwards else spreadOnly
+    }
+
+    /** Series Best Overall: quality ([seriesQualityParts]) with the start year weighed in. */
     fun seriesBestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
-        (1 - SERIES_START_YEAR_WEIGHT) * bestOverallScore(facts, currentYear) +
+        (1 - SERIES_START_YEAR_WEIGHT) * seriesQualityParts(facts, currentYear).total +
             SERIES_START_YEAR_WEIGHT * startYearScore(facts.movie.year, currentYear)
 
     // Share of popularity in the series' pre-score quality (the site's IMDb score is the rest): the
@@ -633,7 +654,7 @@ object MovieRanking {
         val total: Double get() = rating + awards + popularity + actors
     }
 
-    fun bestOverallParts(facts: RankedMovieRepository.MovieFacts, currentYear: Int): BestOverallParts {
+    fun bestOverallParts(facts: RankedMovieRepository.MovieFacts, currentYear: Int, spreadAwards: Boolean = true): BestOverallParts {
         val info = facts.info
         // 5.0 -> 0, 9.0 -> 1
         val rating = ((weightedRating(facts.imdb, ratingConfidence(facts)) - 5.0) / 4.0).coerceIn(0.0, 1.0)
@@ -645,7 +666,7 @@ object MovieRanking {
             popularity = POPULARITY_WEIGHT * popularity,
             actors = ACTORS_WEIGHT * actors
         )
-        if (facts.movie.year < currentYear - 1) return withAwards
+        if (!spreadAwards || facts.movie.year < currentYear - 1) return withAwards
         val share = AWARDS_WEIGHT / 3
         return BestOverallParts(
             rating = (RATING_WEIGHT + share) * rating,

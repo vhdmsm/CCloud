@@ -94,7 +94,11 @@ fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: 
                 format(
                     "%.2f = rating %.2f + awards %.2f + popularity %.2f + actors %.2f",
                     parts.total, parts.rating, parts.awards, parts.popularity, parts.actors
-                ) + if (parts.awardsSpread) "\n(recent: the awards' share is spread over rating, popularity and actors, and its awards are added on top)" else ""
+                ) + when {
+                    !parts.awardsSpread -> ""
+                    series -> "\n(recent: the awards' share is spread over rating, popularity and actors)"
+                    else -> "\n(recent: the awards' share is spread over rating, popularity and actors, and its awards are added on top)"
+                }
             )
             if (series) {
                 // Series are ranked with their start year weighed in

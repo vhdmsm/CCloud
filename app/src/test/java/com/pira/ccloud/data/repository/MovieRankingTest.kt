@@ -296,6 +296,43 @@ class MovieRankingTest {
     }
 
     @Test
+    fun picksTheSeriesWhateverItsAccentsAndNotAnOldOneOfTheSameName() {
+        val old = WatchmodeClient.SearchResult(1, "tv_miniseries", 1980, "Shogun")
+        val new = WatchmodeClient.SearchResult(2, "tv_series", 2024, "Shōgun")
+        assertEquals(2, WatchmodeClient.pickSeries(listOf(old, new), 2024, "Shogun"))
+        // The site lists it by its second season's year
+        assertEquals(2, WatchmodeClient.pickSeries(listOf(old, new), 2026, "Shogun"))
+        // Only the 1980 one: not that series
+        assertNull(WatchmodeClient.pickSeries(listOf(old), 2024, "Shogun"))
+    }
+
+    @Test
+    fun aRecentSeriesDoesntGetItsAwardsOnTopOfTheSpreadShare() {
+        val awards = OmdbClient.Awards(oscarWins = 0, oscarNominations = 0, wins = 100, nominations = 200)
+        val facts = MovieFacts(
+            movie(1, 9.0, 2025), info(popularity = 100.0, relevance = 100.0, cast = 1.0), awards,
+            OmdbClient.Rating(9.0, 1_000_000)
+        )
+        // Movies: awards on top of the spread share, above 1
+        assertTrue(MovieRanking.bestOverallParts(facts, currentYear).total > 1.0)
+        // Series: the better of spread (no awards) and with awards, at most 1
+        assertEquals(1.0, MovieRanking.seriesQualityParts(facts, currentYear).total, 0.02)
+        assertTrue(MovieRanking.seriesQualityParts(facts, currentYear).total <= 1.0 + 1e-9)
+        // An older series keeps the movies' score
+        val older = facts.copy(movie = movie(1, 9.0, 2022))
+        assertEquals(MovieRanking.bestOverallParts(older, currentYear), MovieRanking.seriesQualityParts(older, currentYear))
+    }
+
+    @Test
+    fun aSeriesWithoutAnImdbRatingYetDoesntKeepTheSitesScore() {
+        // Well known on Watchmode, rated 8.8 on the site, but IMDb has no votes for it yet
+        val facts = MovieFacts(movie(1, 8.8, 2026), info(relevance = 99.0), null)
+        val unrated = facts.copy(unrated = true)
+        assertEquals(0.0, MovieRanking.ratingConfidence(unrated), 1e-9)
+        assertTrue(MovieRanking.seriesBestOverallScore(unrated, currentYear) < MovieRanking.seriesBestOverallScore(facts, currentYear))
+    }
+
+    @Test
     fun startYearScoreGoesFromTheOldestListedYearToThisYear() {
         val year = 2026
         assertEquals(1.0, MovieRanking.startYearScore(year, year), 1e-9)
@@ -318,7 +355,7 @@ class MovieRankingTest {
         assertTrue(famousOlder > littleKnownNew)
         // Without the list, the site's score alone
         assertEquals(
-            0.6 * ((8.8 - 5.0) / 4.0) + 0.4,
+            (1 - MovieRanking.SERIES_START_YEAR_WEIGHT) * ((8.8 - 5.0) / 4.0) + MovieRanking.SERIES_START_YEAR_WEIGHT,
             MovieRanking.seriesPreScore(show(8.8, 2026), year, popularity = null),
             1e-9
         )

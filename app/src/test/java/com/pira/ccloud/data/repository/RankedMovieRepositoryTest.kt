@@ -130,7 +130,7 @@ class RankedMovieRepositoryTest {
     }
 
     @Test
-    fun ranksSeriesAcrossStartYearsWithTheStartYearWeighingALot() = runBlocking {
+    fun ranksSeriesAcrossStartYearsWithTheStartYearWeighedIn() = runBlocking {
         val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
         // Newest first, as the server lists them: weak shows from this year, a strong one from last
         // year further down (like The Pitt), an excellent one from six years ago
@@ -155,9 +155,8 @@ class RankedMovieRepositoryTest {
         val order = result.movies.map { it.id }
         // The strong show from last year leads, though this year's come first in the server's list
         assertEquals(10, order.first())
-        // The excellent old one comes after this year's weak ones: the start year weighs a lot
-        assertEquals(20, order.last())
-        assertTrue(order.indexOf(20) > order.indexOf(1))
+        // The excellent old one still comes before this year's weak ones: newer only wins among similar ones
+        assertTrue(order.indexOf(20) < order.indexOf(1))
         assertFalse(result.hasMore)
     }
 

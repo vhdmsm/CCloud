@@ -28,14 +28,17 @@ object MovieInsights {
         val details = info?.imdbId?.takeIf { it.isNotEmpty() && OmdbClient.isConfigured }
             ?.let { OmdbClient.details(it, movie.year) }
         val awards = MovieRanking.pickAwards(details?.awards, describedAwards)
-        val facts = RankedMovieRepository.MovieFacts(movie, info, awards, details?.rating)
+        val facts = RankedMovieRepository.MovieFacts(
+            movie, info, awards, details?.rating, unrated = series && details != null && details.rating == null
+        )
         val year = Calendar.getInstance().get(Calendar.YEAR)
         return Insight(
             facts = facts,
             awardsFromDescription = describedAwards != null && awards === describedAwards,
             releaseDate = MovieDescription.releaseDate(movie) ?: info?.releaseDate?.takeIf { it.isNotEmpty() },
             topRated = MovieRanking.score(FilterType.TOP_RATED, facts, year),
-            bestOverall = MovieRanking.bestOverallParts(facts, year),
+            // Series are scored without the recent ones' awards on top (see seriesQualityParts)
+            bestOverall = if (series) MovieRanking.seriesQualityParts(facts, year) else MovieRanking.bestOverallParts(facts, year),
             incomplete = info == null || info.actors.isEmpty() || (details == null && info.imdbId.isNotEmpty())
         )
     }
