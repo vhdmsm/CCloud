@@ -121,6 +121,7 @@ import com.pira.ccloud.data.model.SubtitleSettings
 import com.pira.ccloud.player.DualSubtitleRenderersFactory
 import com.pira.ccloud.player.DualSubtitleTrackSelector
 import com.pira.ccloud.player.ExternalSubtitle
+import com.pira.ccloud.player.HoldSeek
 import com.pira.ccloud.player.OnlineSubtitlesState
 import com.pira.ccloud.player.OpenSubtitlesClient
 import com.pira.ccloud.player.SubtitleLanguage
@@ -699,14 +700,10 @@ fun VideoPlayerScreen(
                     return true
                 }
                 // Key held: move the shown position at intervals, faster the longer it is held
-                if (event.eventTime - lastHoldSeekTime < HOLD_SEEK_INTERVAL_MS) return true
+                if (event.eventTime - lastHoldSeekTime < HoldSeek.INTERVAL_MS) return true
                 lastHoldSeekTime = event.eventTime
                 val heldMs = event.eventTime - event.downTime
-                val multiplier = when {
-                    heldMs < 2_000 -> 1
-                    heldMs < 5_000 -> 3
-                    else -> 6
-                }
+                val multiplier = HoldSeek.multiplier(heldMs)
                 if (holdSeekTarget == null) {
                     // Show the target position instead of the playing one until the key is released
                     seekJob?.cancel()
@@ -2201,9 +2198,6 @@ private fun OutlinedSubtitleText(
         )
     }
 }
-
-// While a seek key is held, how often the shown position moves
-private const val HOLD_SEEK_INTERVAL_MS = 300L
 
 // Which control gets focus when the remote brings the controls back
 private enum class ControlFocus { SETTINGS, SEEK_BAR }
