@@ -23,19 +23,25 @@ object MovieInsights {
 
     /** [series]: [movie] is a series (as a movie), looked up on Watchmode as one. */
     suspend fun load(movie: Movie, series: Boolean = false): Insight {
-        val info = if (WatchmodeClient.isConfigured) WatchmodeClient.movie(movie.title, movie.year, withCast = true, series = series) else null
+        val info = if (WatchmodeClient.isConfigured) WatchmodeClient.movie(
+            movie.title, movie.year, withCast = true, series = series,
+            languages = if (series) MovieRanking.languagesOf(movie.country) else emptySet()
+        ) else null
         val describedAwards = MovieDescription.awards(movie)
         val details = info?.imdbId?.takeIf { it.isNotEmpty() && OmdbClient.isConfigured }
             ?.let { OmdbClient.details(it, movie.year) }
         val awards = MovieRanking.pickAwards(details?.awards, describedAwards)
-        val facts = RankedMovieRepository.MovieFacts(movie, info, awards, details?.rating)
+        val facts = RankedMovieRepository.MovieFacts(
+            movie, info, awards, details?.rating, unrated = series && details != null && details.rating == null
+        )
         val year = Calendar.getInstance().get(Calendar.YEAR)
         return Insight(
             facts = facts,
             awardsFromDescription = describedAwards != null && awards === describedAwards,
             releaseDate = MovieDescription.releaseDate(movie) ?: info?.releaseDate?.takeIf { it.isNotEmpty() },
             topRated = MovieRanking.score(FilterType.TOP_RATED, facts, year),
-            bestOverall = MovieRanking.bestOverallParts(facts, year),
+            // Series are scored without the recent ones' awards on top (see seriesQualityParts)
+            bestOverall = if (series) MovieRanking.seriesQualityParts(facts, year) else MovieRanking.bestOverallParts(facts, year),
             incomplete = info == null || info.actors.isEmpty() || (details == null && info.imdbId.isNotEmpty())
         )
     }

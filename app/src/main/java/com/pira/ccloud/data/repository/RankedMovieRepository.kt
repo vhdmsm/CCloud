@@ -3,6 +3,7 @@ package com.pira.ccloud.data.repository
 import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.utils.LanguageUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -37,7 +38,11 @@ class RankedMovieRepository(
     // Release years before this aren't shown: lists read newest first end there (null: no limit)
     private val minYear: () -> Int? = { null },
     // Whether one more title may get new (paid) data now; test mode allows a few a day
-    private val mayFetchNewData: () -> Boolean = DataUsage::tryUseLookup
+    private val mayFetchNewData: () -> Boolean = DataUsage::tryUseLookup,
+    // Series Best Overall: the most popular series, to pick which series get data first (null: unknown)
+    private val seriesPopularity: suspend () -> SeriesPopularity? = {
+        if (WatchmodeClient.isConfigured) WatchmodeClient.popularSeries(MovieRanking.SERIES_MIN_START_YEAR) else null
+    }
 ) {
     data class RankedPage(
         val movies: List<Movie>,
@@ -60,7 +65,10 @@ class RankedMovieRepository(
         val info: MovieInfo?,
         val awards: OmdbClient.Awards?,
         // IMDb's current rating from OMDb
-        val rating: OmdbClient.Rating? = null
+        val rating: OmdbClient.Rating? = null,
+        // A series OMDb answered for without an IMDb rating (too new to have votes): the site's score
+        // isn't trusted then
+        val unrated: Boolean = false
     ) {
         // The current IMDb rating, else the server's (from when the movie was added)
         val imdb: Double get() = rating?.imdb ?: movie.imdb
@@ -95,7 +103,7 @@ class RankedMovieRepository(
             val (batch, more) = nextSeriesBatch(genreId, filterType, seen) { progress -> onUpdate(result(emptyList(), progress)) }
             hasMore = more
             val year = Calendar.getInstance().get(Calendar.YEAR)
-            ranked += rankGroup(batch, filterType, emptyList(), year = null, priority = { MovieRanking.seriesPreScore(it, year) }) { facts, progress ->
+            ranked += rankGroup(batch, filterType, emptyList(), year = null, priority = { seriesPreScore(it, year) }) { facts, progress ->
                 onUpdate(result(facts, progress))
             }
             return result(ranked, null)
@@ -187,6 +195,8 @@ class RankedMovieRepository(
     private class SeriesPool(val genreId: Int) {
         val series = mutableListOf<Movie>()
         val ids = HashSet<Int>()
+        // Title and year of the series taken: the site lists some series twice
+        val titles = HashSet<String>()
         var nextPage = 0
         var exhausted = false
         var oldestYearRead = Int.MAX_VALUE
@@ -195,9 +205,16 @@ class RankedMovieRepository(
     @Volatile
     private var seriesPool: SeriesPool? = null
 
+    // Watchmode's most popular series, read with the series list
+    @Volatile
+    private var popularSeries: SeriesPopularity? = null
+
+    private fun seriesPreScore(movie: Movie, currentYear: Int): Double =
+        MovieRanking.seriesPreScore(movie, currentYear, popularSeries?.let { it.score(movie.title, movie.year) ?: 0.0 })
+
     /**
      * The next series to rank: the [SERIES_BATCH_SIZE] likeliest best by the site's data (IMDb score
-     * and start year) not shown yet, and whether more are left. The list is read newest first only as
+     * and start year) and Watchmode's popular series list, not shown yet, and whether more are left. The list is read newest first only as
      * far as a series could still make the batch: one that started earlier can't score higher.
      */
     private suspend fun nextSeriesBatch(
@@ -210,10 +227,20 @@ class RankedMovieRepository(
         // A new list (nothing handled yet) reads the server again; later loads go on with the pool
         val pool = seriesPool?.takeIf { it.genreId == genreId && seen.isNotEmpty() }
             ?: SeriesPool(genreId).also { seriesPool = it }
+        if (popularSeries == null) {
+            onProgress("Reading the most popular series…")
+            popularSeries = try {
+                seriesPopularity()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
         val limit = minYear()
         fun unseen() = pool.series.filter { it.id !in seen }
         while (!pool.exhausted && pool.nextPage < MAX_SERIES_PAGES) {
-            val kth = unseen().map { MovieRanking.seriesPreScore(it, year) }.sortedDescending().getOrNull(SERIES_BATCH_SIZE - 1)
+            val kth = unseen().map { seriesPreScore(it, year) }.sortedDescending().getOrNull(SERIES_BATCH_SIZE - 1)
             if (kth != null && pool.oldestYearRead != Int.MAX_VALUE &&
                 kth >= MovieRanking.seriesBestPreScore(pool.oldestYearRead, year)
             ) break
@@ -235,13 +262,15 @@ class RankedMovieRepository(
                         pool.exhausted = true
                         continue
                     }
-                    if (pool.ids.add(movie.id) && isWanted(movie) && MovieRanking.isCandidate(movie, filterType)) {
+                    if (pool.ids.add(movie.id) && isWanted(movie) && MovieRanking.isCandidate(movie, filterType) &&
+                        pool.titles.add("${SeriesPopularity.normalize(movie.title)}|${movie.year}")
+                    ) {
                         pool.series += movie
                     }
                 }
             }
         }
-        val batch = unseen().sortedByDescending { MovieRanking.seriesPreScore(it, year) }.take(SERIES_BATCH_SIZE)
+        val batch = unseen().sortedByDescending { seriesPreScore(it, year) }.take(SERIES_BATCH_SIZE)
         batch.forEach { seen += it.id }
         val hasMore = pool.series.any { it.id !in seen } || (!pool.exhausted && pool.nextPage < MAX_SERIES_PAGES)
         return batch to hasMore
@@ -338,7 +367,7 @@ class RankedMovieRepository(
         val byScore = compareByDescending<MovieFacts> {
             when {
                 // Series weigh the start year in, with or without data
-                ranksSeriesAcrossYears(filterType) && dataMissing -> MovieRanking.seriesPreScore(it.movie, year)
+                ranksSeriesAcrossYears(filterType) && dataMissing -> seriesPreScore(it.movie, year)
                 ranksSeriesAcrossYears(filterType) -> MovieRanking.seriesBestOverallScore(it, year)
                 dataMissing || castMissing -> it.imdb
                 else -> MovieRanking.score(filterType, it, year)
@@ -388,6 +417,9 @@ class RankedMovieRepository(
         return custom(movie, filterType, cachedOnly)
     }
 
+    // Series of the same name are told apart by language (from the site's countries)
+    private fun languages(movie: Movie): Set<String> = if (series) MovieRanking.languagesOf(movie.country) else emptySet()
+
     // Watchmode gives the IMDb id for OMDb (Most Awards skips both when the description names the
     // awards). Movies Watchmode says are Indian or Turkish are dropped before any OMDb request.
     private suspend fun lookUp(movie: Movie, filterType: FilterType, cachedOnly: Boolean): MovieFacts? {
@@ -396,13 +428,15 @@ class RankedMovieRepository(
         val info = when {
             // Answers from the cache even when the credits are out
             needsInfo && WatchmodeClient.isConfigured -> if (cachedOnly) {
-                WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, cachedOnly = true, series = series)
+                WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, cachedOnly = true, series = series, languages = languages(movie))
             } else {
-                watchmodePermits.withPermit { WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, series = series) }
+                watchmodePermits.withPermit {
+                    WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, series = series, languages = languages(movie))
+                }
             }
             // Newest uses a release date Watchmode already gave for another sort, at no cost
             filterType == FilterType.NEWEST && WatchmodeClient.isConfigured ->
-                WatchmodeClient.movie(movie.title, movie.year, withCast = false, cachedOnly = true, series = series)
+                WatchmodeClient.movie(movie.title, movie.year, withCast = false, cachedOnly = true, series = series, languages = languages(movie))
             else -> null
         }
         if (info != null && MovieRanking.isExcludedOrigin(info)) return null
@@ -417,7 +451,10 @@ class RankedMovieRepository(
         }
         // The site's score let it in, but the current one is below the minimum
         if (details?.rating?.let { MovieRanking.isLowRated(it.imdb) } == true) return null
-        return MovieFacts(movie, info, MovieRanking.pickAwards(details?.awards, describedAwards), details?.rating)
+        return MovieFacts(
+            movie, info, MovieRanking.pickAwards(details?.awards, describedAwards), details?.rating,
+            unrated = series && details != null && details.rating == null
+        )
     }
 
     private companion object {
@@ -431,7 +468,7 @@ class RankedMovieRepository(
         const val PAGES_READ_AHEAD = 3
         // Series Best Overall: series that get data in one load, server pages read at a time, and
         // the pages read at most (about 12,000 series)
-        const val SERIES_BATCH_SIZE = 150
+        const val SERIES_BATCH_SIZE = 300
         const val SERIES_PAGES_PER_READ = 8
         const val MAX_SERIES_PAGES = 400
     }
@@ -451,6 +488,33 @@ object MovieRanking {
     private const val RATING_VOTES_PRIOR = 10_000.0
 
     // Indian and Turkish movies are left out of the ranked sorts, by the server's country or genre
+    // The site's countries -> the original languages (ISO 639-1, as Watchmode gives them) their
+    // series are likely in; countries not listed tell nothing
+    private val countryLanguages: Map<String, Set<String>> = mapOf(
+        "امریکا" to setOf("en"), "آمریکا" to setOf("en"), "انگلستان" to setOf("en"), "استرالیا" to setOf("en"),
+        "کانادا" to setOf("en", "fr"), "ایرلند" to setOf("en"), "نیوزیلند" to setOf("en"),
+        "آفریقای جنوبی" to setOf("en"), "نیجریه" to setOf("en"),
+        "چین" to setOf("zh", "cn"), "تایوان" to setOf("zh", "cn"), "هنگ کنگ" to setOf("zh", "cn"),
+        "ژاپن" to setOf("ja"), "کره جنوبی" to setOf("ko"), "کره" to setOf("ko"), "تایلند" to setOf("th"),
+        "ترکیه" to setOf("tr"), "هند" to setOf("hi", "ta", "te", "ml", "kn", "bn", "mr", "pa", "gu"),
+        "پاکستان" to setOf("ur"), "فیلیپین" to setOf("tl", "fil", "en"), "اندونزی" to setOf("id"),
+        "اسپانیا" to setOf("es", "ca"), "مکزیک" to setOf("es"), "آرژانتین" to setOf("es"), "کلمبیا" to setOf("es"),
+        "برزیل" to setOf("pt"), "پرتغال" to setOf("pt"), "فرانسه" to setOf("fr"), "بلژیک" to setOf("fr", "nl"),
+        "آلمان" to setOf("de"), "اتریش" to setOf("de"), "سوئیس" to setOf("de", "fr", "it"), "ایتالیا" to setOf("it"),
+        "سوئد" to setOf("sv"), "دانمارک" to setOf("da"), "نروژ" to setOf("no", "nb", "nn"), "فنلاند" to setOf("fi"),
+        "هلند" to setOf("nl"), "لهستان" to setOf("pl"), "روسیه" to setOf("ru"), "رومانی" to setOf("ro"),
+        "لبنان" to setOf("ar"), "سوریه" to setOf("ar"), "مصر" to setOf("ar"), "عربستان" to setOf("ar"),
+        "امارات" to setOf("ar"), "اردن" to setOf("ar"), "کویت" to setOf("ar")
+    )
+
+    /** The languages a title from these (site) countries is likely in; empty when unknown. */
+    fun languagesOf(countries: List<com.pira.ccloud.data.model.Country>): Set<String> {
+        val known = countries.map { countryLanguages[it.title.trim()] }
+        // One unknown country (a co-production) and any language may be right
+        if (known.isEmpty() || known.any { it == null }) return emptySet()
+        return known.filterNotNull().flatten().toSet()
+    }
+
     private val excludedCountryNames = setOf("india", "هند", "هندوستان", "turkey", "türkiye", "turkiye", "ترکیه")
     private val excludedGenreNames = setOf("هندی", "ترکی")
     // Hindi, Tamil, Telugu, Malayalam, Kannada, Bengali, Marathi, Punjabi, Gujarati, Turkish
@@ -508,9 +572,11 @@ object MovieRanking {
 
     /**
      * 0..1: how far the IMDB score can be trusted. From the number of IMDb votes when OMDb gave it
-     * (10,000 votes -> 0.5, 100,000 -> 0.91), else from how well known Watchmode says the movie is.
+     * (10,000 votes -> 0.5, 100,000 -> 0.91), else from how well known Watchmode says the movie is;
+     * none for a series IMDb has no rating for yet.
      */
     fun ratingConfidence(facts: RankedMovieRepository.MovieFacts): Double {
+        if (facts.unrated) return 0.0
         val votes = facts.rating?.votes ?: 0
         if (votes > 0) return votes / (votes + RATING_VOTES_PRIOR)
         return facts.info?.ratingConfidence ?: 0.0
@@ -561,9 +627,9 @@ object MovieRanking {
     fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
         bestOverallParts(facts, currentYear).total
 
-    // Series Best Overall: unlike movies, a series' start year weighs a lot (newer shows first);
-    // the movies' Best Overall (quality) is the rest
-    const val SERIES_START_YEAR_WEIGHT = 0.4
+    // Series Best Overall: unlike movies, a series' start year is weighed in (newer shows first
+    // among similar ones; at 0.4 a mediocre new series beat Severance); the quality is the rest
+    const val SERIES_START_YEAR_WEIGHT = 0.17
     // Series that started before this aren't listed; it counts 0 for the start year, this year 1
     const val SERIES_MIN_START_YEAR = 2019
 
@@ -574,15 +640,39 @@ object MovieRanking {
         return ((year - SERIES_MIN_START_YEAR).toDouble() / span).coerceIn(0.0, 1.0)
     }
 
-    /** Series Best Overall: quality (the movies' Best Overall) with the start year weighed in. */
+    /**
+     * A series' quality: the movies' Best Overall, except that a recent series (whose awards'
+     * share is spread over the rest) doesn't get its awards on top as well: it gets the better of
+     * the two ways, never more than 1. Its newness is weighed in by the start year already.
+     */
+    fun seriesQualityParts(facts: RankedMovieRepository.MovieFacts, currentYear: Int): BestOverallParts {
+        val parts = bestOverallParts(facts, currentYear)
+        if (!parts.awardsSpread) return parts
+        val spreadOnly = parts.copy(awards = 0.0)
+        val withAwards = bestOverallParts(facts, currentYear, spreadAwards = false)
+        return if (withAwards.total >= spreadOnly.total) withAwards else spreadOnly
+    }
+
+    /** Series Best Overall: quality ([seriesQualityParts]) with the start year weighed in. */
     fun seriesBestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
-        (1 - SERIES_START_YEAR_WEIGHT) * bestOverallScore(facts, currentYear) +
+        (1 - SERIES_START_YEAR_WEIGHT) * seriesQualityParts(facts, currentYear).total +
             SERIES_START_YEAR_WEIGHT * startYearScore(facts.movie.year, currentYear)
 
-    /** Before any data: the site's IMDb score in place of the quality, to pick which series get data first. */
-    fun seriesPreScore(movie: Movie, currentYear: Int): Double =
-        (1 - SERIES_START_YEAR_WEIGHT) * ((movie.imdb - 5.0) / 4.0).coerceIn(0.0, 1.0) +
-            SERIES_START_YEAR_WEIGHT * startYearScore(movie.year, currentYear)
+    // Share of popularity in the series' pre-score quality (the site's IMDb score is the rest): the
+    // site's scores are high for many little-known series
+    const val SERIES_PRE_POPULARITY_WEIGHT = 0.7
+
+    /**
+     * Before any data, to pick which series get data first: the site's IMDb score and [popularity]
+     * (0..1, from Watchmode's popular series list; 0 when the series isn't on it, null when the list
+     * isn't known) in place of the quality.
+     */
+    fun seriesPreScore(movie: Movie, currentYear: Int, popularity: Double? = null): Double {
+        val imdb = ((movie.imdb - 5.0) / 4.0).coerceIn(0.0, 1.0)
+        val quality = if (popularity == null) imdb else
+            (1 - SERIES_PRE_POPULARITY_WEIGHT) * imdb + SERIES_PRE_POPULARITY_WEIGHT * popularity.coerceIn(0.0, 1.0)
+        return (1 - SERIES_START_YEAR_WEIGHT) * quality + SERIES_START_YEAR_WEIGHT * startYearScore(movie.year, currentYear)
+    }
 
     /** The highest pre-score a series that started in [year] can have. */
     fun seriesBestPreScore(year: Int, currentYear: Int): Double =
@@ -600,7 +690,7 @@ object MovieRanking {
         val total: Double get() = rating + awards + popularity + actors
     }
 
-    fun bestOverallParts(facts: RankedMovieRepository.MovieFacts, currentYear: Int): BestOverallParts {
+    fun bestOverallParts(facts: RankedMovieRepository.MovieFacts, currentYear: Int, spreadAwards: Boolean = true): BestOverallParts {
         val info = facts.info
         // 5.0 -> 0, 9.0 -> 1
         val rating = ((weightedRating(facts.imdb, ratingConfidence(facts)) - 5.0) / 4.0).coerceIn(0.0, 1.0)
@@ -612,7 +702,7 @@ object MovieRanking {
             popularity = POPULARITY_WEIGHT * popularity,
             actors = ACTORS_WEIGHT * actors
         )
-        if (facts.movie.year < currentYear - 1) return withAwards
+        if (!spreadAwards || facts.movie.year < currentYear - 1) return withAwards
         val share = AWARDS_WEIGHT / 3
         return BestOverallParts(
             rating = (RATING_WEIGHT + share) * rating,
