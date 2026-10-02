@@ -629,7 +629,7 @@ object MovieRanking {
 
     // Series Best Overall: unlike movies, a series' start year is weighed in (newer shows first
     // among similar ones; at 0.4 a mediocre new series beat Severance); the quality is the rest
-    const val SERIES_START_YEAR_WEIGHT = 0.2
+    const val SERIES_START_YEAR_WEIGHT = 0.17
     // Series that started before this aren't listed; it counts 0 for the start year, this year 1
     const val SERIES_MIN_START_YEAR = 2019
 

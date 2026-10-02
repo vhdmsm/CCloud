@@ -108,7 +108,7 @@ fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: 
                 ScoreRow(
                     "Series rank",
                     format(
-                        "%.2f = %.1f × Best Overall %.2f + %.1f × start year %.2f",
+                        "%.2f = %.2f × Best Overall %.2f + %.2f × start year %.2f",
                         (1 - weight) * parts.total + weight * startYear, 1 - weight, parts.total, weight, startYear
                     ) + "\n(started ${movie.year}: ${MovieRanking.SERIES_MIN_START_YEAR} counts 0, $currentYear counts 1)"
                 )
