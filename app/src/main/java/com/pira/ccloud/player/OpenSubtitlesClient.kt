@@ -3,6 +3,9 @@ package com.pira.ccloud.player
 import android.net.Uri
 import com.pira.ccloud.BuildConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -30,13 +33,21 @@ object OpenSubtitlesClient {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    // Reading the video for its hash is only a bonus: a slow video server mustn't hold up the search
+    private val hashClient = client.newBuilder()
+        .callTimeout(4, TimeUnit.SECONDS)
+        .build()
+
     data class Result(
         val fileId: Int,
         val release: String,
         val downloadCount: Int,
         // The subtitle was made for exactly this video file (same OpenSubtitles hash)
         val matchesFile: Boolean,
-        val hearingImpaired: Boolean
+        val hearingImpaired: Boolean,
+        // The movie's title (for an episode, the show's) and year in the subtitle database
+        val title: String = "",
+        val year: Int? = null
     )
 
     data class Download(
@@ -78,11 +89,50 @@ object OpenSubtitlesClient {
     }
 
     suspend fun search(release: ReleaseInfo, movieHash: String?): List<Result> = withContext(Dispatchers.IO) {
+        // Release names and the subtitle database often disagree on a movie's year by one (e.g. a
+        // file named 2026 for a 2025 movie), and the year is a strict filter, so the years around it
+        // are searched too (searching is free)
+        val years: List<Int?> = release.year?.takeIf { release.season == null }
+            ?.let { listOf(it, it - 1, it + 1) }
+            ?: listOf(null)
+        val found = coroutineScope {
+            years.map { year -> async { searchYear(release, movieHash, year) } }.awaitAll()
+        }
+        pickResults(release, found.flatten())
+    }
+
+    /**
+     * Only subtitles of the movie (or show) itself: the search matches any title sharing a word
+     * ("the snare" finds "The Couple Across the Street"). Then the same file first, the closest
+     * year (two movies can share a title), and the most similar release name.
+     */
+    fun pickResults(release: ReleaseInfo, found: List<Result>): List<Result> {
+        val unique = found.distinctBy { it.fileId }
+        val wanted = normalizedTitle(release.title)
+        val exact = unique.filter { it.matchesFile || normalizedTitle(it.title) == wanted }
+        // Titles written a little differently (e.g. with a subtitle): all of the words are in it
+        val wantedWords = wanted.split(' ').filter { it.isNotEmpty() }.toSet()
+        val matching = exact.ifEmpty {
+            unique.filter { result ->
+                wantedWords.isNotEmpty() && normalizedTitle(result.title).split(' ').toSet().containsAll(wantedWords)
+            }
+        }
+        val releaseWords = releaseWords(release.fileName)
+        return matching.sortedWith(
+            compareByDescending<Result> { it.matchesFile }
+                .thenBy { result -> release.year?.let { year -> result.year?.let { kotlin.math.abs(it - year) } } ?: 0 }
+                .thenByDescending { (releaseWords(it.release) intersect releaseWords).size }
+                .thenBy { it.hearingImpaired }
+                .thenByDescending { it.downloadCount }
+        )
+    }
+
+    private fun searchYear(release: ReleaseInfo, movieHash: String?, year: Int?): List<Result> {
         // The API redirects unless parameters are sorted by name and values are lowercase
         val params = sortedMapOf<String, String>()
         params["languages"] = "en"
         if (release.title.isNotBlank()) params["query"] = release.title.lowercase()
-        release.year?.takeIf { release.season == null }?.let { params["year"] = it.toString() }
+        year?.let { params["year"] = it.toString() }
         release.season?.let { params["season_number"] = it.toString() }
         release.episode?.let { params["episode_number"] = it.toString() }
         movieHash?.let { params["moviehash"] = it }
@@ -91,28 +141,26 @@ object OpenSubtitlesClient {
         }
 
         val json = execute(request("$BASE_URL/subtitles?$query").get().build())
-        val data = json.optJSONArray("data") ?: return@withContext emptyList()
-        val releaseWords = releaseWords(release.fileName)
-        (0 until data.length())
-            .mapNotNull { index ->
-                val attributes = data.getJSONObject(index).optJSONObject("attributes") ?: return@mapNotNull null
-                val file = attributes.optJSONArray("files")?.optJSONObject(0) ?: return@mapNotNull null
-                Result(
-                    fileId = file.optInt("file_id"),
-                    release = attributes.optString("release").ifBlank { file.optString("file_name") },
-                    downloadCount = attributes.optInt("download_count"),
-                    matchesFile = attributes.optBoolean("moviehash_match"),
-                    hearingImpaired = attributes.optBoolean("hearing_impaired")
-                )
-            }
-            // Same file first, then the most similar release name (same source/quality/group)
-            .sortedWith(
-                compareByDescending<Result> { it.matchesFile }
-                    .thenByDescending { (releaseWords(it.release) intersect releaseWords).size }
-                    .thenBy { it.hearingImpaired }
-                    .thenByDescending { it.downloadCount }
+        val data = json.optJSONArray("data") ?: return emptyList()
+        return (0 until data.length()).mapNotNull { index ->
+            val attributes = data.getJSONObject(index).optJSONObject("attributes") ?: return@mapNotNull null
+            val file = attributes.optJSONArray("files")?.optJSONObject(0) ?: return@mapNotNull null
+            val feature = attributes.optJSONObject("feature_details")
+            Result(
+                fileId = file.optInt("file_id"),
+                release = attributes.optString("release").ifBlank { file.optString("file_name") },
+                downloadCount = attributes.optInt("download_count"),
+                matchesFile = attributes.optBoolean("moviehash_match"),
+                hearingImpaired = attributes.optBoolean("hearing_impaired"),
+                // An episode's own title is the episode's name; the show's is its parent title
+                title = feature?.let { if (release.season != null) it.optString("parent_title") else it.optString("title") }.orEmpty(),
+                year = feature?.optInt("year")?.takeIf { it > 0 }
             )
+        }
     }
+
+    private fun normalizedTitle(title: String): String =
+        title.lowercase().replace("&", " and ").replace(Regex("[^a-z0-9]+"), " ").trim()
 
     suspend fun download(result: Result): Download = withContext(Dispatchers.IO) {
         val body = JSONObject()
@@ -162,7 +210,7 @@ object OpenSubtitlesClient {
             .url(url)
             .header("Range", "bytes=$start-${start + length - 1}")
             .build()
-        return client.newCall(request).execute().use { response ->
+        return hashClient.newCall(request).execute().use { response ->
             if (response.code != 206) return null
             val bytes = response.body?.bytes() ?: return null
             if (bytes.size.toLong() != length) return null
@@ -188,9 +236,10 @@ object OpenSubtitlesClient {
             json
         }
 
+    // WEB-DL, WEB.DL and WEB DL are the same source
     private fun releaseWords(name: String): Set<String> =
         name.lowercase()
-            .replace("web-dl", "webdl")
+            .replace(Regex("web[ ._-]?dl"), "webdl")
             .split(Regex("[^a-z0-9]+"))
             .filter { it.length > 1 }
             .toSet()
