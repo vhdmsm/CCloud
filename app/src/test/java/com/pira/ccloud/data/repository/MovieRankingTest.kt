@@ -305,4 +305,37 @@ class MovieRankingTest {
         assertEquals(0.0, MovieRanking.startYearScore(0, year), 1e-9)
         assertEquals(6.0 / 7.0, MovieRanking.startYearScore(2025, year), 1e-9)
     }
+
+    @Test
+    fun popularityLiftsAWellKnownSeriesAboveLittleKnownOnesTheSiteRatesHigher() {
+        val year = 2026
+        fun show(imdb: Double, startYear: Int) = Movie(
+            id = 1, type = "serie", title = "Show", description = "", year = startYear, imdb = imdb, rating = 0.0,
+            duration = null, image = "", cover = "", genres = emptyList(), sources = emptyList(), country = emptyList()
+        )
+        val littleKnownNew = MovieRanking.seriesPreScore(show(8.8, 2026), year, popularity = 0.0)
+        val famousOlder = MovieRanking.seriesPreScore(show(8.6, 2022), year, popularity = 0.97)
+        assertTrue(famousOlder > littleKnownNew)
+        // Without the list, the site's score alone
+        assertEquals(
+            0.6 * ((8.8 - 5.0) / 4.0) + 0.4,
+            MovieRanking.seriesPreScore(show(8.8, 2026), year, popularity = null),
+            1e-9
+        )
+        // Never above the best a series of its start year can have (the series list is read that far)
+        assertTrue(MovieRanking.seriesPreScore(show(10.0, 2022), year, 1.0) <= MovieRanking.seriesBestPreScore(2022, year) + 1e-9)
+    }
+
+    @Test
+    fun matchesPopularSeriesByTitleWithoutAccentsAndByStartYear() {
+        val popularity = SeriesPopularity(listOf("Shōgun" to 2024, "The White Lotus" to 2021, "Task" to 2025, "Task" to 2010))
+        assertEquals(1.0, popularity.score("Shogun", 2024)!!, 1e-9)
+        // The site may list a series by a later season's year
+        assertEquals(0.75, popularity.score("The White Lotus (2021)", 2025)!!, 1e-9)
+        assertEquals(0.5, popularity.score("TASK", 2025)!!, 1e-9)
+        // Too far from the start year: another series of that name
+        assertEquals(null, popularity.score("The White Lotus", 2030))
+        assertEquals(null, popularity.score("Unknown Show", 2024))
+        assertEquals("the white lotus", SeriesPopularity.normalize("The White Lotus (2021)"))
+    }
 }

@@ -3,6 +3,7 @@ package com.pira.ccloud.data.repository
 import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.utils.LanguageUtils
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -37,7 +38,11 @@ class RankedMovieRepository(
     // Release years before this aren't shown: lists read newest first end there (null: no limit)
     private val minYear: () -> Int? = { null },
     // Whether one more title may get new (paid) data now; test mode allows a few a day
-    private val mayFetchNewData: () -> Boolean = DataUsage::tryUseLookup
+    private val mayFetchNewData: () -> Boolean = DataUsage::tryUseLookup,
+    // Series Best Overall: the most popular series, to pick which series get data first (null: unknown)
+    private val seriesPopularity: suspend () -> SeriesPopularity? = {
+        if (WatchmodeClient.isConfigured) WatchmodeClient.popularSeries(MovieRanking.SERIES_MIN_START_YEAR) else null
+    }
 ) {
     data class RankedPage(
         val movies: List<Movie>,
@@ -95,7 +100,7 @@ class RankedMovieRepository(
             val (batch, more) = nextSeriesBatch(genreId, filterType, seen) { progress -> onUpdate(result(emptyList(), progress)) }
             hasMore = more
             val year = Calendar.getInstance().get(Calendar.YEAR)
-            ranked += rankGroup(batch, filterType, emptyList(), year = null, priority = { MovieRanking.seriesPreScore(it, year) }) { facts, progress ->
+            ranked += rankGroup(batch, filterType, emptyList(), year = null, priority = { seriesPreScore(it, year) }) { facts, progress ->
                 onUpdate(result(facts, progress))
             }
             return result(ranked, null)
@@ -195,9 +200,16 @@ class RankedMovieRepository(
     @Volatile
     private var seriesPool: SeriesPool? = null
 
+    // Watchmode's most popular series, read with the series list
+    @Volatile
+    private var popularSeries: SeriesPopularity? = null
+
+    private fun seriesPreScore(movie: Movie, currentYear: Int): Double =
+        MovieRanking.seriesPreScore(movie, currentYear, popularSeries?.let { it.score(movie.title, movie.year) ?: 0.0 })
+
     /**
      * The next series to rank: the [SERIES_BATCH_SIZE] likeliest best by the site's data (IMDb score
-     * and start year) not shown yet, and whether more are left. The list is read newest first only as
+     * and start year) and Watchmode's popular series list, not shown yet, and whether more are left. The list is read newest first only as
      * far as a series could still make the batch: one that started earlier can't score higher.
      */
     private suspend fun nextSeriesBatch(
@@ -210,10 +222,20 @@ class RankedMovieRepository(
         // A new list (nothing handled yet) reads the server again; later loads go on with the pool
         val pool = seriesPool?.takeIf { it.genreId == genreId && seen.isNotEmpty() }
             ?: SeriesPool(genreId).also { seriesPool = it }
+        if (popularSeries == null) {
+            onProgress("Reading the most popular series…")
+            popularSeries = try {
+                seriesPopularity()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
         val limit = minYear()
         fun unseen() = pool.series.filter { it.id !in seen }
         while (!pool.exhausted && pool.nextPage < MAX_SERIES_PAGES) {
-            val kth = unseen().map { MovieRanking.seriesPreScore(it, year) }.sortedDescending().getOrNull(SERIES_BATCH_SIZE - 1)
+            val kth = unseen().map { seriesPreScore(it, year) }.sortedDescending().getOrNull(SERIES_BATCH_SIZE - 1)
             if (kth != null && pool.oldestYearRead != Int.MAX_VALUE &&
                 kth >= MovieRanking.seriesBestPreScore(pool.oldestYearRead, year)
             ) break
@@ -241,7 +263,7 @@ class RankedMovieRepository(
                 }
             }
         }
-        val batch = unseen().sortedByDescending { MovieRanking.seriesPreScore(it, year) }.take(SERIES_BATCH_SIZE)
+        val batch = unseen().sortedByDescending { seriesPreScore(it, year) }.take(SERIES_BATCH_SIZE)
         batch.forEach { seen += it.id }
         val hasMore = pool.series.any { it.id !in seen } || (!pool.exhausted && pool.nextPage < MAX_SERIES_PAGES)
         return batch to hasMore
@@ -338,7 +360,7 @@ class RankedMovieRepository(
         val byScore = compareByDescending<MovieFacts> {
             when {
                 // Series weigh the start year in, with or without data
-                ranksSeriesAcrossYears(filterType) && dataMissing -> MovieRanking.seriesPreScore(it.movie, year)
+                ranksSeriesAcrossYears(filterType) && dataMissing -> seriesPreScore(it.movie, year)
                 ranksSeriesAcrossYears(filterType) -> MovieRanking.seriesBestOverallScore(it, year)
                 dataMissing || castMissing -> it.imdb
                 else -> MovieRanking.score(filterType, it, year)
@@ -431,7 +453,7 @@ class RankedMovieRepository(
         const val PAGES_READ_AHEAD = 3
         // Series Best Overall: series that get data in one load, server pages read at a time, and
         // the pages read at most (about 12,000 series)
-        const val SERIES_BATCH_SIZE = 150
+        const val SERIES_BATCH_SIZE = 300
         const val SERIES_PAGES_PER_READ = 8
         const val MAX_SERIES_PAGES = 400
     }
@@ -579,10 +601,21 @@ object MovieRanking {
         (1 - SERIES_START_YEAR_WEIGHT) * bestOverallScore(facts, currentYear) +
             SERIES_START_YEAR_WEIGHT * startYearScore(facts.movie.year, currentYear)
 
-    /** Before any data: the site's IMDb score in place of the quality, to pick which series get data first. */
-    fun seriesPreScore(movie: Movie, currentYear: Int): Double =
-        (1 - SERIES_START_YEAR_WEIGHT) * ((movie.imdb - 5.0) / 4.0).coerceIn(0.0, 1.0) +
-            SERIES_START_YEAR_WEIGHT * startYearScore(movie.year, currentYear)
+    // Share of popularity in the series' pre-score quality (the site's IMDb score is the rest): the
+    // site's scores are high for many little-known series
+    const val SERIES_PRE_POPULARITY_WEIGHT = 0.7
+
+    /**
+     * Before any data, to pick which series get data first: the site's IMDb score and [popularity]
+     * (0..1, from Watchmode's popular series list; 0 when the series isn't on it, null when the list
+     * isn't known) in place of the quality.
+     */
+    fun seriesPreScore(movie: Movie, currentYear: Int, popularity: Double? = null): Double {
+        val imdb = ((movie.imdb - 5.0) / 4.0).coerceIn(0.0, 1.0)
+        val quality = if (popularity == null) imdb else
+            (1 - SERIES_PRE_POPULARITY_WEIGHT) * imdb + SERIES_PRE_POPULARITY_WEIGHT * popularity.coerceIn(0.0, 1.0)
+        return (1 - SERIES_START_YEAR_WEIGHT) * quality + SERIES_START_YEAR_WEIGHT * startYearScore(movie.year, currentYear)
+    }
 
     /** The highest pre-score a series that started in [year] can have. */
     fun seriesBestPreScore(year: Int, currentYear: Int): Double =

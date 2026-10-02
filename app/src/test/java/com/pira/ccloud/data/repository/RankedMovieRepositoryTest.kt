@@ -148,7 +148,8 @@ class RankedMovieRepositoryTest {
                 RankedMovieRepository.MovieFacts(movie, MovieInfo(popularity, 0.5, confidence, cast, "", "tt${movie.id}", "en"), null)
             },
             series = true,
-            minYear = { MovieRanking.SERIES_MIN_START_YEAR }
+            minYear = { MovieRanking.SERIES_MIN_START_YEAR },
+            seriesPopularity = { null }
         )
         val result = repo.getRankedMovies(0, 0, FilterType.BEST_OVERALL, emptySet())
         val order = result.movies.map { it.id }
@@ -163,23 +164,50 @@ class RankedMovieRepositoryTest {
     @Test
     fun readsTheSeriesListOnlyAsFarAsAShowCouldStillMakeTheBatch() = runBlocking {
         val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-        // 300 top-rated shows from this year, then older ones that can't score as high
-        val pages = (0 until 10).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year).copy(imdb = 9.0) } } +
-            (10 until 20).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year - 3).copy(imdb = 9.0) } }
+        // 600 top-rated shows from this year, then older ones that can't score as high
+        val pages = (0 until 20).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year).copy(imdb = 9.0) } } +
+            (20 until 30).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year - 3).copy(imdb = 9.0) } }
         val requested = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
         val repo = RankedMovieRepository(
             fetchPage = { page, _, _ -> requested += page; pages.getOrElse(page) { emptyList() } },
             mayMergeRecentYears = { false },
             lookUpFacts = { movie, _, _ -> RankedMovieRepository.MovieFacts(movie, null, null) },
             series = true,
-            minYear = { MovieRanking.SERIES_MIN_START_YEAR }
+            minYear = { MovieRanking.SERIES_MIN_START_YEAR },
+            seriesPopularity = { null }
         )
         val first = repo.getRankedMovies(0, 0, FilterType.BEST_OVERALL, emptySet())
-        assertEquals(150, first.movies.size)
+        assertEquals(300, first.movies.size)
         assertTrue(first.movies.all { it.year == year })
-        // One read of 8 pages was enough: no older page was asked for
-        assertEquals((0 until 8).toSet(), requested.toSet())
+        // Two reads of 8 pages were enough: no older page was asked for
+        assertEquals((0 until 16).toSet(), requested.toSet())
         assertTrue(first.hasMore)
+    }
+
+    @Test
+    fun popularSeriesGetDataBeforeLittleKnownOnesTheSiteRatesHigher() = runBlocking {
+        val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        // 400 little-known shows from this year with high site scores, then a famous one from
+        // three years ago (like Severance) with a lower site score
+        val pages = (0 until 14).map { p ->
+            (0 until 30).map { p * 30 + it + 1 }.filter { it <= 400 }.map { movie(it, year).copy(imdb = 8.5) }
+        } + listOf(listOf(movie(1000, year - 3).copy(title = "Shōgun", imdb = 7.0)))
+        val looked = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+        val repo = RankedMovieRepository(
+            fetchPage = { page, _, _ -> pages.getOrElse(page) { emptyList() } },
+            mayMergeRecentYears = { false },
+            lookUpFacts = { movie, _, cachedOnly ->
+                if (!cachedOnly) looked += movie.id
+                RankedMovieRepository.MovieFacts(movie, null, null)
+            },
+            series = true,
+            minYear = { MovieRanking.SERIES_MIN_START_YEAR },
+            seriesPopularity = { SeriesPopularity(listOf("Shogun" to year - 3, "Other" to year)) }
+        )
+        val first = repo.getRankedMovies(0, 0, FilterType.BEST_OVERALL, emptySet())
+        // The famous show makes the first batch and gets its data; without the list it wouldn't
+        assertTrue(1000 in first.movies.map { it.id })
+        assertTrue(1000 in looked)
     }
 
     @Test

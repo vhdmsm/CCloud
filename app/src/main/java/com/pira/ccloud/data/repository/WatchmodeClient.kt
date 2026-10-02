@@ -9,6 +9,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -43,6 +45,9 @@ object WatchmodeClient {
     private const val MAX_RATE_WAIT_MS = SHORT_BACKOFF_MS + 5_000L
     // Below this share of the month's credits left, only this year's movies get new lookups
     private const val RESERVE_SHARE = 0.2
+    // The most popular series list: pages of 250 read (a credit each) and how long it's kept
+    private const val POPULAR_SERIES_PAGES = 12
+    private const val POPULAR_SERIES_TTL_MS = 7L * 24 * 60 * 60 * 1000
 
     private val keys: List<String> by lazy {
         BuildConfig.WATCHMODE_API_KEYS.split(',').map { it.trim() }.filter { it.isNotEmpty() }
@@ -174,6 +179,65 @@ object WatchmodeClient {
         }
         toInfo(stored)
     }
+
+    private val popularSeriesLock = Mutex()
+
+    /**
+     * Watchmode's most popular series that started in [sinceYear] or later (about 3,000, the most
+     * popular first), or null when it can't be read. Read once a week, for a few credits.
+     */
+    suspend fun popularSeries(sinceYear: Int): SeriesPopularity? = withContext(Dispatchers.IO) {
+        popularSeriesLock.withLock {
+            val key = "popular-series:$sinceYear"
+            readCache(key, POPULAR_SERIES_TTL_MS)?.let { cached ->
+                return@withLock try {
+                    SeriesPopularity(parsePopular(JSONArray(cached)))
+                } catch (e: Exception) {
+                    null
+                }
+            }
+            if (!isAvailableSoon) return@withLock null
+            val pages = try {
+                coroutineScope {
+                    (1..POPULAR_SERIES_PAGES).map { page ->
+                        async {
+                            call(
+                                "/list-titles/",
+                                "types" to "tv_series,tv_miniseries",
+                                "sort_by" to "popularity_desc",
+                                "release_date_start" to "${sinceYear}0101",
+                                "limit" to "250",
+                                "page" to page.toString()
+                            ).optJSONArray("titles") ?: JSONArray()
+                        }
+                    }.awaitAll()
+                }
+            } catch (e: IOException) {
+                offlineUntil = System.currentTimeMillis() + SHORT_BACKOFF_MS
+                return@withLock null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                return@withLock null
+            }
+            val titles = JSONArray()
+            for (page in pages) {
+                for (i in 0 until page.length()) {
+                    val title = page.optJSONObject(i) ?: continue
+                    titles.put(JSONArray().put(title.optString("title")).put(title.optInt("year")))
+                }
+            }
+            if (titles.length() == 0) return@withLock null
+            writeCache(key, titles.toString())
+            SeriesPopularity(parsePopular(titles))
+        }
+    }
+
+    private fun parsePopular(titles: JSONArray): List<Pair<String, Int>> =
+        (0 until titles.length()).mapNotNull { i ->
+            val row = titles.optJSONArray(i) ?: return@mapNotNull null
+            row.optString(0).takeIf { it.isNotBlank() }?.let { it to row.optInt(1) }
+        }
 
     data class SearchResult(val id: Int, val type: String, val year: Int, val name: String = "")
 
@@ -379,19 +443,21 @@ object WatchmodeClient {
         keyBlockedUntil[key] = System.currentTimeMillis() + durationMs
     }
 
-    private fun readCache(key: String): String? {
-        memoryCache[key]?.let { return it }
-        val entry = prefs?.getString(key, null) ?: return null
+    private fun readCache(key: String, ttlMs: Long = CACHE_TTL_MS): String? {
+        val entry = memoryCache[key] ?: prefs?.getString(key, null) ?: return null
         val savedAt = entry.substringBefore('|').toLongOrNull() ?: return null
-        if (System.currentTimeMillis() - savedAt > CACHE_TTL_MS) {
+        if (System.currentTimeMillis() - savedAt > ttlMs) {
+            memoryCache.remove(key)
             prefs?.edit()?.remove(key)?.apply()
             return null
         }
-        return entry.substringAfter('|').also { memoryCache[key] = it }
+        memoryCache[key] = entry
+        return entry.substringAfter('|')
     }
 
     private fun writeCache(key: String, value: String) {
-        memoryCache[key] = value
-        prefs?.edit()?.putString(key, "${System.currentTimeMillis()}|$value")?.apply()
+        val entry = "${System.currentTimeMillis()}|$value"
+        memoryCache[key] = entry
+        prefs?.edit()?.putString(key, entry)?.apply()
     }
 }
