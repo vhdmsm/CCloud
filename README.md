@@ -191,17 +191,19 @@ The single-field and combined movie sorts read popularity, actors and release da
 2. For local builds, add them to `secrets.properties` in the project root:
    ```properties
    WATCHMODE_API_KEY=your_watchmode_key
-   # Optional extra Watchmode keys, WATCHMODE_API_KEY2 up to WATCHMODE_API_KEY10: requests are
-   # spread over all of them, each adds 120 requests a minute and a monthly quota
+   # Optional extra Watchmode keys, as WATCHMODE_API_KEY2, WATCHMODE_API_KEY3, ... and/or a
+   # WATCHMODE_API_KEYS list (comma-separated), any number: requests are spread over all of them,
+   # each adds 120 requests a minute and a monthly quota
    WATCHMODE_API_KEY2=your_second_watchmode_key
-   WATCHMODE_API_KEY3=your_third_watchmode_key
+   WATCHMODE_API_KEYS=your_third_watchmode_key,your_fourth_watchmode_key
    OMDB_API_KEY=your_omdb_key
-   # Optional extra OMDb keys, used in turn when one reaches its daily limit
+   # Optional extra OMDb keys, as OMDB_API_KEY2, OMDB_API_KEY3, ... and/or an OMDB_API_KEYS list,
+   # any number: used in turn when one reaches its daily limit
    OMDB_API_KEY2=your_second_omdb_key
    OMDB_API_KEY3=your_third_omdb_key
    OMDB_API_KEY4=your_fourth_omdb_key
    ```
-3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
+3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`. To add keys, add secrets with the next number: the workflows read `WATCHMODE_API_KEY` to `WATCHMODE_API_KEY50` and `OMDB_API_KEY` to `OMDB_API_KEY50` (secrets can only be read by name: reading all of them at once makes GitHub hold every run for approval). For more than that (any number, no change to the code or the workflows), add a `WATCHMODE_API_KEYS` or `OMDB_API_KEYS` secret with one key per line (GitHub hides each line in the logs); a secret can't be read back, so keep a copy of the list to add to it later.
 
 Watchmode's free plan allows 120 requests a minute and 2500 credits a month per key: each movie costs 2 credits (the actor sorts up to 3 more; actors are cached). Requests go to the key with the most room, each kept at 110 a minute, and a lookup waits for room instead of failing. The sorts that use it read the server's newest-first list by release year: this year's and last year's movies are ranked together first (only this year's when credits are low), then each older year as you scroll; when less than 20% of the month's credits are left, only this year's movies get new lookups. Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
 

@@ -28,8 +28,10 @@ object OmdbClient {
     private const val LIMIT_BACKOFF_MS = 3L * 60 * 60 * 1000
     private const val OFFLINE_BACKOFF_MS = 60_000L
 
-    private val keys: List<String>
-        get() = listOf(BuildConfig.OMDB_API_KEY, BuildConfig.OMDB_API_KEY2, BuildConfig.OMDB_API_KEY3, BuildConfig.OMDB_API_KEY4).filter { it.isNotEmpty() }
+    // Any number of keys (OMDB_API_KEY, OMDB_API_KEY2, ...), comma-separated by the build
+    private val keys: List<String> by lazy {
+        BuildConfig.OMDB_API_KEYS.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+    }
 
     val isConfigured: Boolean get() = keys.isNotEmpty()
 

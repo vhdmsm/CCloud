@@ -107,12 +107,15 @@ object WatchmodeClient {
         }
     }
 
-    // True when credits are low and only this year's movies get new lookups
-    val isSavingCredits: Boolean get() = (remainingShare ?: 1.0) < RESERVE_SHARE
+    // True when credits are low and only this year's movies get new lookups (not in Unlimited mode)
+    val isSavingCredits: Boolean get() = DataUsage.keepsCreditReserve && (remainingShare ?: 1.0) < RESERVE_SHARE
 
-    /** New lookups (which cost credits) for this year's movies always; for older ones only while credits last. */
-    fun allowsNewLookup(year: Int, currentYear: Int, remainingShare: Double?): Boolean =
-        year >= currentYear || (remainingShare ?: 1.0) >= RESERVE_SHARE
+    /**
+     * New lookups (which cost credits) for this year's movies always; for older ones only while
+     * credits last, unless [keepReserve] is off (Unlimited mode uses the credits to the end).
+     */
+    fun allowsNewLookup(year: Int, currentYear: Int, remainingShare: Double?, keepReserve: Boolean = true): Boolean =
+        !keepReserve || year >= currentYear || (remainingShare ?: 1.0) >= RESERVE_SHARE
 
     fun init(context: Context) {
         if (prefs == null) prefs = context.applicationContext.getSharedPreferences("watchmode", Context.MODE_PRIVATE)
@@ -135,7 +138,7 @@ object WatchmodeClient {
         val key = "${if (series) "s" else "t"}:${query.lowercase()}|$year"
         // Cached answers are free and still used when the credits are out; new lookups for older
         // movies wait while credits are low. A key at its per-minute limit is waited for.
-        val mayLookUp = !cachedOnly && isAvailableSoon && allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare)
+        val mayLookUp = !cachedOnly && isAvailableSoon && allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare, DataUsage.keepsCreditReserve)
 
         val stored = try {
             readCache(key)?.let { JSONObject(it) } ?: run {
