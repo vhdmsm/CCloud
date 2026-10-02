@@ -33,7 +33,8 @@ class SeriesRepository : BaseRepository() {
         return when (filterType) {
             FilterType.DEFAULT -> "$baseUrl/$genreId/created/$page/$API_KEY"
             FilterType.BY_YEAR -> "$baseUrl/$genreId/year/$page/$API_KEY"
-            FilterType.BY_IMDB -> "$baseUrl/$genreId/imdb/$page/$API_KEY"
+            // By IMDB; the ranked sorts read these lists through RankedMovieRepository
+            else -> "$baseUrl/$genreId/imdb/$page/$API_KEY"
         }
     }
     

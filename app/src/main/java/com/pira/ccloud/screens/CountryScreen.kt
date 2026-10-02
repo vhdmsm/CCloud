@@ -169,7 +169,8 @@ fun CountryScreen(
                     text = when (selectedFilterType) {
                         FilterType.DEFAULT -> ""
                         FilterType.BY_YEAR -> "Sorted by Year"
-                        FilterType.BY_IMDB -> "Sorted by IMDB"
+                        // By IMDB; the ranked sorts are only offered for movies
+                        else -> "Sorted by IMDB"
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary

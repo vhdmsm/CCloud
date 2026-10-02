@@ -96,8 +96,36 @@ fun SeriesScreen(
             selectedGenreId = selectedGenreId,
             selectedFilterType = selectedFilterType,
             onGenreSelected = { genreId -> viewModel.selectGenre(genreId) },
-            onFilterTypeSelected = { filterType -> viewModel.selectFilterType(filterType) }
+            onFilterTypeSelected = { filterType -> viewModel.selectFilterType(filterType) },
+            filterTypes = viewModel.filterTypes
         )
+        
+        viewModel.rankingNotice?.let { notice ->
+            Text(
+                text = notice,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
+        
+        viewModel.rankingProgress?.let { progress ->
+            Text(
+                text = progress,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
+        }
+        
+        viewModel.rankingAttribution?.let { attribution ->
+            Text(
+                text = attribution,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+            )
+        }
         
         // Remove Column wrapper to use full screen space
         when {
@@ -303,9 +331,10 @@ fun SeriesGrid(
                 }
             )
             
-            // Load more when we're near the end of the list
+            // Load more when we're near the end of the list (asked again when a load ends, as a
+            // ranked list shows while it loads)
             if (index >= seriesList.size - 3) {
-                LaunchedEffect(Unit) {
+                LaunchedEffect(seriesList.size, isLoading, isLoadingMore) {
                     onLoadMore()
                 }
             }

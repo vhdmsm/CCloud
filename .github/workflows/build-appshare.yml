@@ -26,6 +26,9 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The default also installs "tools", which the SDK no longer has
+          packages: 'platform-tools'
 
       - name: Make gradlew executable
         run: |
@@ -79,10 +82,25 @@ jobs:
           echo "storeFile=keystore.jks" >> key.properties
         continue-on-error: true
 
-      # OpenSubtitles API key for online English subtitles; without it the feature is hidden
+      # API keys for online English subtitles (OpenSubtitles) and the ranked movie sorts (Watchmode, OMDb);
+      # a feature whose key is missing is hidden
       - name: Create secrets properties file
         run: |
           echo "OPENSUBTITLES_API_KEY=${{ secrets.OPENSUBTITLES_API_KEY }}" > secrets.properties
+          echo "OMDB_API_KEY=${{ secrets.OMDB_API_KEY }}" >> secrets.properties
+          echo "OMDB_API_KEY2=${{ secrets.OMDB_API_KEY2 }}" >> secrets.properties
+          echo "OMDB_API_KEY3=${{ secrets.OMDB_API_KEY3 }}" >> secrets.properties
+          echo "OMDB_API_KEY4=${{ secrets.OMDB_API_KEY4 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY=${{ secrets.WATCHMODE_API_KEY }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY2=${{ secrets.WATCHMODE_API_KEY2 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY3=${{ secrets.WATCHMODE_API_KEY3 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY4=${{ secrets.WATCHMODE_API_KEY4 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY5=${{ secrets.WATCHMODE_API_KEY5 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY6=${{ secrets.WATCHMODE_API_KEY6 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY7=${{ secrets.WATCHMODE_API_KEY7 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY8=${{ secrets.WATCHMODE_API_KEY8 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY9=${{ secrets.WATCHMODE_API_KEY9 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY10=${{ secrets.WATCHMODE_API_KEY10 }}" >> secrets.properties
         continue-on-error: true
 
       - name: Build APK

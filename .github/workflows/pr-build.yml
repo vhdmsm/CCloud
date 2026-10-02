@@ -1,0 +1,64 @@
+name: PR Build
+
+# Runs the unit tests and builds an installable APK for every pull request (no release is created)
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          # The default also installs "tools", which the SDK no longer has
+          packages: 'platform-tools'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      # Same API keys as the release build, so the APK can be tested with every feature
+      # (secrets are empty for pull requests from forks; those features are then hidden)
+      - name: Create secrets properties file
+        run: |
+          echo "OPENSUBTITLES_API_KEY=${{ secrets.OPENSUBTITLES_API_KEY }}" > secrets.properties
+          echo "OMDB_API_KEY=${{ secrets.OMDB_API_KEY }}" >> secrets.properties
+          echo "OMDB_API_KEY2=${{ secrets.OMDB_API_KEY2 }}" >> secrets.properties
+          echo "OMDB_API_KEY3=${{ secrets.OMDB_API_KEY3 }}" >> secrets.properties
+          echo "OMDB_API_KEY4=${{ secrets.OMDB_API_KEY4 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY=${{ secrets.WATCHMODE_API_KEY }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY2=${{ secrets.WATCHMODE_API_KEY2 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY3=${{ secrets.WATCHMODE_API_KEY3 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY4=${{ secrets.WATCHMODE_API_KEY4 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY5=${{ secrets.WATCHMODE_API_KEY5 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY6=${{ secrets.WATCHMODE_API_KEY6 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY7=${{ secrets.WATCHMODE_API_KEY7 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY8=${{ secrets.WATCHMODE_API_KEY8 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY9=${{ secrets.WATCHMODE_API_KEY9 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY10=${{ secrets.WATCHMODE_API_KEY10 }}" >> secrets.properties
+
+      - name: Run unit tests
+        run: |
+          chmod +x gradlew
+          ./gradlew testDebugUnitTest --stacktrace
+
+      # Release build (minified like the published APK), signed with the debug key
+      - name: Build APK
+        run: ./gradlew assembleRelease --stacktrace -x lint
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CCloud-pr-${{ github.event.pull_request.number || github.run_number }}
+          path: app/build/outputs/apk/release/*.apk
+          retention-days: 14

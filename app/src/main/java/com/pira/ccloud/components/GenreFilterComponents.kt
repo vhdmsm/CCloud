@@ -17,6 +17,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -28,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Genre
@@ -38,7 +40,8 @@ fun GenreFilterSection(
     selectedGenreId: Int,
     selectedFilterType: FilterType,
     onGenreSelected: (Int) -> Unit,
-    onFilterTypeSelected: (FilterType) -> Unit
+    onFilterTypeSelected: (FilterType) -> Unit,
+    filterTypes: List<FilterType> = listOf(FilterType.DEFAULT, FilterType.BY_YEAR, FilterType.BY_IMDB)
 ) {
     Column(
         modifier = Modifier
@@ -62,7 +65,8 @@ fun GenreFilterSection(
             // Filter type selector on the left
             FilterTypeSelector(
                 selectedFilterType = selectedFilterType,
-                onFilterTypeSelected = onFilterTypeSelected
+                onFilterTypeSelected = onFilterTypeSelected,
+                filterTypes = filterTypes
             )
             
             // Genre selector on the right
@@ -78,7 +82,8 @@ fun GenreFilterSection(
 @Composable
 fun FilterTypeSelector(
     selectedFilterType: FilterType,
-    onFilterTypeSelected: (FilterType) -> Unit
+    onFilterTypeSelected: (FilterType) -> Unit,
+    filterTypes: List<FilterType> = listOf(FilterType.DEFAULT, FilterType.BY_YEAR, FilterType.BY_IMDB)
 ) {
     var expanded by remember { mutableStateOf(false) }
     
@@ -103,14 +108,13 @@ fun FilterTypeSelector(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = when (selectedFilterType) {
-                        FilterType.DEFAULT -> "Sort: Default"
-                        FilterType.BY_YEAR -> "Sort: By Year"
-                        FilterType.BY_IMDB -> "Sort: By IMDB"
-                    },
+                    text = "Sort: ${filterTypeShortLabel(selectedFilterType)}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimary,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
@@ -124,30 +128,66 @@ fun FilterTypeSelector(
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
             ) {
-                DropdownMenuItem(
-                    text = { Text("Default") },
-                    onClick = {
-                        onFilterTypeSelected(FilterType.DEFAULT)
-                        expanded = false
+                filterTypes.forEachIndexed { index, filterType ->
+                    // Server sorts, then single-field sorts, then combined sorts
+                    val group = filterTypeGroup(filterType)
+                    if (index > 0 && group != filterTypeGroup(filterTypes[index - 1])) {
+                        HorizontalDivider()
                     }
-                )
-                DropdownMenuItem(
-                    text = { Text("By Year") },
-                    onClick = {
-                        onFilterTypeSelected(FilterType.BY_YEAR)
-                        expanded = false
+                    if ((index == 0 || group != filterTypeGroup(filterTypes[index - 1])) && group.isNotEmpty()) {
+                        Text(
+                            text = group,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
                     }
-                )
-                DropdownMenuItem(
-                    text = { Text("By IMDB") },
-                    onClick = {
-                        onFilterTypeSelected(FilterType.BY_IMDB)
-                        expanded = false
-                    }
-                )
+                    DropdownMenuItem(
+                        text = { Text(filterTypeMenuLabel(filterType)) },
+                        onClick = {
+                            onFilterTypeSelected(filterType)
+                            expanded = false
+                        }
+                    )
+                }
             }
         }
     }
+}
+
+private fun filterTypeMenuLabel(filterType: FilterType): String = when (filterType) {
+    FilterType.DEFAULT -> "Default"
+    FilterType.BY_YEAR -> "By Year"
+    FilterType.BY_IMDB -> "By IMDB"
+    FilterType.MOST_POPULAR -> "Most Popular"
+    FilterType.TOP_RATED -> "Top Rated"
+    FilterType.STAR_CAST -> "Famous Actors"
+    FilterType.MOST_AWARDED -> "Most Awards"
+    FilterType.NEWEST -> "Newest Release Date"
+    FilterType.TOP_PICKS -> "Top Picks (Rating + Year)"
+    FilterType.POPULAR_CAST -> "Popular + Actors"
+    FilterType.BEST_OVERALL -> "Best Overall (All)"
+}
+
+// Fits the 150dp sort button
+private fun filterTypeShortLabel(filterType: FilterType): String = when (filterType) {
+    FilterType.DEFAULT -> "Default"
+    FilterType.BY_YEAR -> "By Year"
+    FilterType.BY_IMDB -> "By IMDB"
+    FilterType.MOST_POPULAR -> "Popular"
+    FilterType.TOP_RATED -> "Top Rated"
+    FilterType.STAR_CAST -> "Actors"
+    FilterType.MOST_AWARDED -> "Awards"
+    FilterType.NEWEST -> "Newest"
+    FilterType.TOP_PICKS -> "Top Picks"
+    FilterType.POPULAR_CAST -> "Pop+Actors"
+    FilterType.BEST_OVERALL -> "Best"
+}
+
+private fun filterTypeGroup(filterType: FilterType): String = when {
+    !filterType.isRanked -> ""
+    filterType in listOf(FilterType.TOP_PICKS, FilterType.POPULAR_CAST, FilterType.BEST_OVERALL) -> "Combined"
+    else -> "Single field"
 }
 
 @Composable

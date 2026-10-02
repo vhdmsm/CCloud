@@ -59,6 +59,25 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Dynamic Subtitles**: Show Persian, English, both at the same time, or no subtitles, using the subtitle tracks inside the video file
 - **Online English Subtitles**: Download English subtitles from OpenSubtitles for videos that don't have them, with timing correction
 
+### 🔎 Movie and Series Filters
+- **Server sorts**: Default, by year, or by IMDB score, combined with a genre
+- The Movies and Series screens open on **Best Overall** when the Watchmode and OMDb keys are set up (else the server's default order); series get the same ranked sorts as movies, matched on Watchmode as series (by name, started in the site's year or before)
+- **Single-field sorts**:
+  - **Most Popular**: current popularity
+  - **Top Rated**: the current IMDB score (from OMDb; the site's score is from when the movie was added), trusted more when many people voted (a 9.0 from a few hundred votes doesn't beat an 8.3 from 100,000)
+  - **Famous Actors**: popularity of the two lead actors (the better known counts about 74%)
+  - **Most Awards**: Oscar wins and nominations and other awards, from the movie's description when it names them, else OMDb
+  - **Newest Release Date**: release date from the movie's description, else the year
+- **Combined sorts**:
+  - **Top Picks (Rating + Year)**: IMDB score with a bonus for newer releases (movies rated 6.5 or higher)
+  - **Popular + Actors**: popularity, how widely known the movie is, and lead actors
+  - **Best Overall (All)**: rating (the current IMDB score, 30%), awards (20%), popularity (30%) and actors (20%) together (the year isn't weighed: these sorts already go one year at a time). Recent movies (this year's and last year's), which haven't had time to win all their awards, spread the awards' share evenly over the other three and get their awards added on top, so missing awards cost nothing and early awards still count
+- Indian and Turkish movies are left out of the single-field and combined sorts
+- A ranked list shows as soon as the site's list is read, ranked by the data already on the device, and is ranked again about every second as new data comes in ("Getting data for 2026 movies: 40 of 120…"); the best rated movies get their data first. When two years are ranked together, this year's movies are ranked and shown first, and last year's join them as their data arrives
+- Each movie's and series' page shows its awards, its current IMDB score with the number of votes, and the value of every criterion (popularity, how well known it is, lead actors, release date, Top Rated and Best Overall scores with their parts)
+- Movies and series rated below 6 on IMDB are left out of these sorts (by the site's score before any request, and by the current score once OMDb gives it); movies not rated yet stay
+- Movie data (popularity, actors) comes from Watchmode, the current IMDB score and awards from OMDb (or awards from the description); the site's own posts (Persian titles) and Indian and Turkish movies (by country or the site's genres) are skipped before any request
+
 ### ❤️ Favorites Management
 - **Save Content**: Add movies and series to your favorites list
 - **Quick Access**: Easily access your saved content from the Favorites screen
@@ -163,6 +182,30 @@ Downloading English subtitles from OpenSubtitles needs an API key. Without one t
 3. For release builds with GitHub Actions, add a repository secret named `OPENSUBTITLES_API_KEY` (Settings → Secrets and variables → Actions). The build workflow writes it to `secrets.properties`.
 
 No user login is needed: without one, OpenSubtitles allows a few downloads per day for each user's IP address.
+
+### Watchmode and OMDb API Keys
+
+The single-field and combined movie sorts read popularity, actors and release dates from [Watchmode](https://api.watchmode.com) (which works from Iran), and the current IMDB score and awards from [OMDb](https://www.omdbapi.com). Without the keys the app works normally; only the sorts that need them are hidden.
+
+1. Get a free Watchmode key on the [Watchmode API page](https://api.watchmode.com/requestApiKey/), and a free OMDb key on the [OMDb API key page](https://www.omdbapi.com/apikey.aspx).
+2. For local builds, add them to `secrets.properties` in the project root:
+   ```properties
+   WATCHMODE_API_KEY=your_watchmode_key
+   # Optional extra Watchmode keys, WATCHMODE_API_KEY2 up to WATCHMODE_API_KEY10: requests are
+   # spread over all of them, each adds 120 requests a minute and a monthly quota
+   WATCHMODE_API_KEY2=your_second_watchmode_key
+   WATCHMODE_API_KEY3=your_third_watchmode_key
+   OMDB_API_KEY=your_omdb_key
+   # Optional extra OMDb keys, used in turn when one reaches its daily limit
+   OMDB_API_KEY2=your_second_omdb_key
+   OMDB_API_KEY3=your_third_omdb_key
+   OMDB_API_KEY4=your_fourth_omdb_key
+   ```
+3. For release builds with GitHub Actions, add repository secrets with the same names. The build workflow writes them to `secrets.properties`.
+
+Watchmode's free plan allows 120 requests a minute and 2500 credits a month per key: each movie costs 2 credits (the actor sorts up to 3 more; actors are cached). Requests go to the key with the most room, each kept at 110 a minute, and a lookup waits for room instead of failing. The sorts that use it read the server's newest-first list by release year: this year's and last year's movies are ranked together first (only this year's when credits are low), then each older year as you scroll; when less than 20% of the month's credits are left, only this year's movies get new lookups. Answers are kept on the device for 30 days, the longest its free plan allows, and "Movie data from Watchmode" is shown under the sort as its terms ask.
+
+OMDb allows 1000 requests a day per key. To save them, only Top Rated, Most Awards and Best Overall use OMDb, they read the newest movies first, Indian and Turkish movies are skipped before any request, and answers are kept on the device (3 days for this year's and last year's movies, whose ratings still move, 30 days for older ones). When a limit is reached (OMDb's daily one or Watchmode's monthly one), the answers already kept on the device are still used, even older ones, so nothing that was fetched is lost.
 
 ### Fixing Gradle Wrapper Issues
 

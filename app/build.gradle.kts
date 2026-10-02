@@ -34,6 +34,20 @@ android {
             "OPENSUBTITLES_API_KEY",
             "\"${secretsProperties.getProperty("OPENSUBTITLES_API_KEY", "")}\""
         )
+        fun apiKey(name: String) = secretsProperties.getProperty(name, "")
+        // OMDb API keys for award data, used in turn (each allows 1000 requests a day); empty hides the award sorts
+        buildConfigField("String", "OMDB_API_KEY", "\"${apiKey("OMDB_API_KEY")}\"")
+        buildConfigField("String", "OMDB_API_KEY2", "\"${apiKey("OMDB_API_KEY2")}\"")
+        buildConfigField("String", "OMDB_API_KEY3", "\"${apiKey("OMDB_API_KEY3")}\"")
+        buildConfigField("String", "OMDB_API_KEY4", "\"${apiKey("OMDB_API_KEY4")}\"")
+        // Watchmode API keys for popularity, actors and release dates, requests spread over all of them;
+        // none hides the sorts that need them. WATCHMODE_API_KEY and WATCHMODE_API_KEY2..10,
+        // comma-separated (unset ones left out)
+        val watchmodeKeys = (listOf("WATCHMODE_API_KEY") + (2..10).map { "WATCHMODE_API_KEY$it" })
+            .map { apiKey(it).trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString(",")
+        buildConfigField("String", "WATCHMODE_API_KEYS", "\"$watchmodeKeys\"")
         
         // Add memory management options
         multiDexEnabled = true
