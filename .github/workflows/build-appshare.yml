@@ -85,12 +85,62 @@ jobs:
       # API keys for online English subtitles (OpenSubtitles) and the ranked movie sorts (Watchmode, OMDb);
       # a feature whose key is missing is hidden
       - name: Create secrets properties file
+        env:
+          # Any number of keys, one per line (each line is masked in logs on its own)
+          OMDB_API_KEYS: ${{ secrets.OMDB_API_KEYS }}
+          WATCHMODE_API_KEYS: ${{ secrets.WATCHMODE_API_KEYS }}
         run: |
           echo "OPENSUBTITLES_API_KEY=${{ secrets.OPENSUBTITLES_API_KEY }}" > secrets.properties
           echo "OMDB_API_KEY=${{ secrets.OMDB_API_KEY }}" >> secrets.properties
           echo "OMDB_API_KEY2=${{ secrets.OMDB_API_KEY2 }}" >> secrets.properties
           echo "OMDB_API_KEY3=${{ secrets.OMDB_API_KEY3 }}" >> secrets.properties
           echo "OMDB_API_KEY4=${{ secrets.OMDB_API_KEY4 }}" >> secrets.properties
+          echo "OMDB_API_KEY5=${{ secrets.OMDB_API_KEY5 }}" >> secrets.properties
+          echo "OMDB_API_KEY6=${{ secrets.OMDB_API_KEY6 }}" >> secrets.properties
+          echo "OMDB_API_KEY7=${{ secrets.OMDB_API_KEY7 }}" >> secrets.properties
+          echo "OMDB_API_KEY8=${{ secrets.OMDB_API_KEY8 }}" >> secrets.properties
+          echo "OMDB_API_KEY9=${{ secrets.OMDB_API_KEY9 }}" >> secrets.properties
+          echo "OMDB_API_KEY10=${{ secrets.OMDB_API_KEY10 }}" >> secrets.properties
+          echo "OMDB_API_KEY11=${{ secrets.OMDB_API_KEY11 }}" >> secrets.properties
+          echo "OMDB_API_KEY12=${{ secrets.OMDB_API_KEY12 }}" >> secrets.properties
+          echo "OMDB_API_KEY13=${{ secrets.OMDB_API_KEY13 }}" >> secrets.properties
+          echo "OMDB_API_KEY14=${{ secrets.OMDB_API_KEY14 }}" >> secrets.properties
+          echo "OMDB_API_KEY15=${{ secrets.OMDB_API_KEY15 }}" >> secrets.properties
+          echo "OMDB_API_KEY16=${{ secrets.OMDB_API_KEY16 }}" >> secrets.properties
+          echo "OMDB_API_KEY17=${{ secrets.OMDB_API_KEY17 }}" >> secrets.properties
+          echo "OMDB_API_KEY18=${{ secrets.OMDB_API_KEY18 }}" >> secrets.properties
+          echo "OMDB_API_KEY19=${{ secrets.OMDB_API_KEY19 }}" >> secrets.properties
+          echo "OMDB_API_KEY20=${{ secrets.OMDB_API_KEY20 }}" >> secrets.properties
+          echo "OMDB_API_KEY21=${{ secrets.OMDB_API_KEY21 }}" >> secrets.properties
+          echo "OMDB_API_KEY22=${{ secrets.OMDB_API_KEY22 }}" >> secrets.properties
+          echo "OMDB_API_KEY23=${{ secrets.OMDB_API_KEY23 }}" >> secrets.properties
+          echo "OMDB_API_KEY24=${{ secrets.OMDB_API_KEY24 }}" >> secrets.properties
+          echo "OMDB_API_KEY25=${{ secrets.OMDB_API_KEY25 }}" >> secrets.properties
+          echo "OMDB_API_KEY26=${{ secrets.OMDB_API_KEY26 }}" >> secrets.properties
+          echo "OMDB_API_KEY27=${{ secrets.OMDB_API_KEY27 }}" >> secrets.properties
+          echo "OMDB_API_KEY28=${{ secrets.OMDB_API_KEY28 }}" >> secrets.properties
+          echo "OMDB_API_KEY29=${{ secrets.OMDB_API_KEY29 }}" >> secrets.properties
+          echo "OMDB_API_KEY30=${{ secrets.OMDB_API_KEY30 }}" >> secrets.properties
+          echo "OMDB_API_KEY31=${{ secrets.OMDB_API_KEY31 }}" >> secrets.properties
+          echo "OMDB_API_KEY32=${{ secrets.OMDB_API_KEY32 }}" >> secrets.properties
+          echo "OMDB_API_KEY33=${{ secrets.OMDB_API_KEY33 }}" >> secrets.properties
+          echo "OMDB_API_KEY34=${{ secrets.OMDB_API_KEY34 }}" >> secrets.properties
+          echo "OMDB_API_KEY35=${{ secrets.OMDB_API_KEY35 }}" >> secrets.properties
+          echo "OMDB_API_KEY36=${{ secrets.OMDB_API_KEY36 }}" >> secrets.properties
+          echo "OMDB_API_KEY37=${{ secrets.OMDB_API_KEY37 }}" >> secrets.properties
+          echo "OMDB_API_KEY38=${{ secrets.OMDB_API_KEY38 }}" >> secrets.properties
+          echo "OMDB_API_KEY39=${{ secrets.OMDB_API_KEY39 }}" >> secrets.properties
+          echo "OMDB_API_KEY40=${{ secrets.OMDB_API_KEY40 }}" >> secrets.properties
+          echo "OMDB_API_KEY41=${{ secrets.OMDB_API_KEY41 }}" >> secrets.properties
+          echo "OMDB_API_KEY42=${{ secrets.OMDB_API_KEY42 }}" >> secrets.properties
+          echo "OMDB_API_KEY43=${{ secrets.OMDB_API_KEY43 }}" >> secrets.properties
+          echo "OMDB_API_KEY44=${{ secrets.OMDB_API_KEY44 }}" >> secrets.properties
+          echo "OMDB_API_KEY45=${{ secrets.OMDB_API_KEY45 }}" >> secrets.properties
+          echo "OMDB_API_KEY46=${{ secrets.OMDB_API_KEY46 }}" >> secrets.properties
+          echo "OMDB_API_KEY47=${{ secrets.OMDB_API_KEY47 }}" >> secrets.properties
+          echo "OMDB_API_KEY48=${{ secrets.OMDB_API_KEY48 }}" >> secrets.properties
+          echo "OMDB_API_KEY49=${{ secrets.OMDB_API_KEY49 }}" >> secrets.properties
+          echo "OMDB_API_KEY50=${{ secrets.OMDB_API_KEY50 }}" >> secrets.properties
           echo "WATCHMODE_API_KEY=${{ secrets.WATCHMODE_API_KEY }}" >> secrets.properties
           echo "WATCHMODE_API_KEY2=${{ secrets.WATCHMODE_API_KEY2 }}" >> secrets.properties
           echo "WATCHMODE_API_KEY3=${{ secrets.WATCHMODE_API_KEY3 }}" >> secrets.properties
@@ -101,6 +151,50 @@ jobs:
           echo "WATCHMODE_API_KEY8=${{ secrets.WATCHMODE_API_KEY8 }}" >> secrets.properties
           echo "WATCHMODE_API_KEY9=${{ secrets.WATCHMODE_API_KEY9 }}" >> secrets.properties
           echo "WATCHMODE_API_KEY10=${{ secrets.WATCHMODE_API_KEY10 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY11=${{ secrets.WATCHMODE_API_KEY11 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY12=${{ secrets.WATCHMODE_API_KEY12 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY13=${{ secrets.WATCHMODE_API_KEY13 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY14=${{ secrets.WATCHMODE_API_KEY14 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY15=${{ secrets.WATCHMODE_API_KEY15 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY16=${{ secrets.WATCHMODE_API_KEY16 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY17=${{ secrets.WATCHMODE_API_KEY17 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY18=${{ secrets.WATCHMODE_API_KEY18 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY19=${{ secrets.WATCHMODE_API_KEY19 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY20=${{ secrets.WATCHMODE_API_KEY20 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY21=${{ secrets.WATCHMODE_API_KEY21 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY22=${{ secrets.WATCHMODE_API_KEY22 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY23=${{ secrets.WATCHMODE_API_KEY23 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY24=${{ secrets.WATCHMODE_API_KEY24 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY25=${{ secrets.WATCHMODE_API_KEY25 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY26=${{ secrets.WATCHMODE_API_KEY26 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY27=${{ secrets.WATCHMODE_API_KEY27 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY28=${{ secrets.WATCHMODE_API_KEY28 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY29=${{ secrets.WATCHMODE_API_KEY29 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY30=${{ secrets.WATCHMODE_API_KEY30 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY31=${{ secrets.WATCHMODE_API_KEY31 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY32=${{ secrets.WATCHMODE_API_KEY32 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY33=${{ secrets.WATCHMODE_API_KEY33 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY34=${{ secrets.WATCHMODE_API_KEY34 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY35=${{ secrets.WATCHMODE_API_KEY35 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY36=${{ secrets.WATCHMODE_API_KEY36 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY37=${{ secrets.WATCHMODE_API_KEY37 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY38=${{ secrets.WATCHMODE_API_KEY38 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY39=${{ secrets.WATCHMODE_API_KEY39 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY40=${{ secrets.WATCHMODE_API_KEY40 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY41=${{ secrets.WATCHMODE_API_KEY41 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY42=${{ secrets.WATCHMODE_API_KEY42 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY43=${{ secrets.WATCHMODE_API_KEY43 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY44=${{ secrets.WATCHMODE_API_KEY44 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY45=${{ secrets.WATCHMODE_API_KEY45 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY46=${{ secrets.WATCHMODE_API_KEY46 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY47=${{ secrets.WATCHMODE_API_KEY47 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY48=${{ secrets.WATCHMODE_API_KEY48 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY49=${{ secrets.WATCHMODE_API_KEY49 }}" >> secrets.properties
+          echo "WATCHMODE_API_KEY50=${{ secrets.WATCHMODE_API_KEY50 }}" >> secrets.properties
+          # Beyond OMDB_API_KEY50 / WATCHMODE_API_KEY50, any number of keys without changing anything here:
+          # the OMDB_API_KEYS and WATCHMODE_API_KEYS secrets, one key per line, written as one comma-separated line
+          echo "OMDB_API_KEYS=$(echo "$OMDB_API_KEYS" | tr -s ' ,\r\n' ',')" >> secrets.properties
+          echo "WATCHMODE_API_KEYS=$(echo "$WATCHMODE_API_KEYS" | tr -s ' ,\r\n' ',')" >> secrets.properties
         continue-on-error: true
 
       - name: Build APK

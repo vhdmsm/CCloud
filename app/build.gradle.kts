@@ -34,20 +34,29 @@ android {
             "OPENSUBTITLES_API_KEY",
             "\"${secretsProperties.getProperty("OPENSUBTITLES_API_KEY", "")}\""
         )
-        fun apiKey(name: String) = secretsProperties.getProperty(name, "")
-        // OMDb API keys for award data, used in turn (each allows 1000 requests a day); empty hides the award sorts
-        buildConfigField("String", "OMDB_API_KEY", "\"${apiKey("OMDB_API_KEY")}\"")
-        buildConfigField("String", "OMDB_API_KEY2", "\"${apiKey("OMDB_API_KEY2")}\"")
-        buildConfigField("String", "OMDB_API_KEY3", "\"${apiKey("OMDB_API_KEY3")}\"")
-        buildConfigField("String", "OMDB_API_KEY4", "\"${apiKey("OMDB_API_KEY4")}\"")
+        // All keys of a service, in order, comma-separated; empty and repeated keys are left out:
+        // <prefix>, <prefix>2, <prefix>3, ... and the <prefix>S list (any number of keys separated by
+        // commas, spaces or new lines), so more keys only need a longer list, no change here
+        fun allKeys(prefix: String): String {
+            val keyName = Regex(Regex.escape(prefix) + "(\\d*)")
+            val numbered = secretsProperties.stringPropertyNames()
+                .mapNotNull { name ->
+                    keyName.matchEntire(name)?.let { (it.groupValues[1].toIntOrNull() ?: 1) to name }
+                }
+                .sortedBy { it.first }
+                .map { secretsProperties.getProperty(it.second, "") }
+            val listed = secretsProperties.getProperty(prefix + "S", "").split(Regex("[,\\s]+"))
+            return (numbered + listed)
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .joinToString(",")
+        }
+        // OMDb API keys for award data, used in turn (each allows 1000 requests a day); none hides the award sorts
+        buildConfigField("String", "OMDB_API_KEYS", "\"${allKeys("OMDB_API_KEY")}\"")
         // Watchmode API keys for popularity, actors and release dates, requests spread over all of them;
-        // none hides the sorts that need them. WATCHMODE_API_KEY and WATCHMODE_API_KEY2..10,
-        // comma-separated (unset ones left out)
-        val watchmodeKeys = (listOf("WATCHMODE_API_KEY") + (2..10).map { "WATCHMODE_API_KEY$it" })
-            .map { apiKey(it).trim() }
-            .filter { it.isNotEmpty() }
-            .joinToString(",")
-        buildConfigField("String", "WATCHMODE_API_KEYS", "\"$watchmodeKeys\"")
+        // none hides the sorts that need them
+        buildConfigField("String", "WATCHMODE_API_KEYS", "\"${allKeys("WATCHMODE_API_KEY")}\"")
         
         // Add memory management options
         multiDexEnabled = true
