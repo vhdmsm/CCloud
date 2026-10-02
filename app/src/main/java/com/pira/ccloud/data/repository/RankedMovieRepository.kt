@@ -31,7 +31,9 @@ class RankedMovieRepository(
     // The data a sort ranks a movie by (null: skip the movie); [cachedOnly] makes no requests
     private val lookUpFacts: (suspend (movie: Movie, filterType: FilterType, cachedOnly: Boolean) -> MovieFacts?)? = null,
     // Ranks series (given as movies) instead: Watchmode is searched for series
-    private val series: Boolean = false
+    private val series: Boolean = false,
+    // Whether one more title may get new (paid) data now; test mode allows a few a day
+    private val mayFetchNewData: () -> Boolean = DataUsage::tryUseLookup
 ) {
     data class RankedPage(
         val movies: List<Movie>,
@@ -200,7 +202,10 @@ class RankedMovieRepository(
                     emit(before + group(onlyReady = !showAll), progress())
                 }
             }
-            pending.sortedByDescending { candidates[it].imdb }.map { i ->
+            // The allowance (test mode) goes to the best rated first; the rest keep the data on the device
+            val (fetched, notFetched) = pending.sortedByDescending { candidates[it].imdb }.partition { mayFetchNewData() }
+            ready += notFetched
+            fetched.map { i ->
                 async {
                     slots[i] = Optional.ofNullable(facts(candidates[i], filterType, cachedOnly = false))
                     ready += i
@@ -253,6 +258,8 @@ class RankedMovieRepository(
             omdbMissing -> "IMDb ratings and awards from OMDb aren't available right now (daily limit or no connection)"
             filterType.needsMovieData && WatchmodeClient.isSavingCredits ->
                 "Watchmode credits are low this month: only this year's movies get new data"
+            DataUsage.isTestAllowanceUsedUp ->
+                "Test mode: today's ${DataUsage.TEST_TITLES_PER_DAY} titles with new data are used. Choose Unlimited in Settings for all"
             else -> null
         }
         val attribution = if (batch.any { it.info != null }) {

@@ -70,6 +70,9 @@ import androidx.compose.ui.unit.dp
 import com.pira.ccloud.BuildConfig
 import com.pira.ccloud.R
 import com.pira.ccloud.data.model.SubtitleMode
+import com.pira.ccloud.data.repository.WatchmodeClient
+import com.pira.ccloud.data.repository.OmdbClient
+import com.pira.ccloud.data.repository.DataUsage
 import com.pira.ccloud.data.model.SubtitleSettings
 import com.pira.ccloud.data.model.VideoPlayerSettings
 import com.pira.ccloud.data.model.FontSettings
@@ -792,6 +795,14 @@ fun SettingsScreen(
             }
         }
         
+        // Movie & series data card (only in builds with Watchmode or OMDb keys)
+        if (WatchmodeClient.isConfigured || OmdbClient.isConfigured) {
+            item {
+                DataUsageCard()
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+        
         // Episode Marks Cache Card
         item {
             val focusRequester = remember { FocusRequester() }
@@ -1510,5 +1521,128 @@ fun FontOption(
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(start = 8.dp)
         )
+    }
+}
+
+// Watchmode/OMDb data for the ranked sorts: a small daily allowance to test, or no limit
+@Composable
+fun DataUsageCard() {
+    val context = LocalContext.current
+    var mode by remember { mutableStateOf(DataUsage.mode) }
+    var usedToday by remember { mutableStateOf(DataUsage.usedToday) }
+    var credits by remember { mutableStateOf(WatchmodeClient.creditsText) }
+    
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        // Reading the quotas costs no credits
+        try {
+            WatchmodeClient.refreshQuotas()
+        } catch (e: Exception) {
+            // Shown after the next lookup instead
+        }
+        credits = WatchmodeClient.creditsText
+        usedToday = DataUsage.usedToday
+    }
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Info,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Text(
+                    text = "Movie & Series Data",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 8.dp)
+                )
+            }
+            
+            Text(
+                text = "The ranked sorts get popularity, actors, ratings and awards from Watchmode and OMDb, " +
+                    "which use API credits. Applies to lists loaded from now on.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            
+            DataUsage.Mode.entries.forEach { option ->
+                DataUsageOption(
+                    mode = option,
+                    isSelected = mode == option,
+                    onSelect = {
+                        DataUsage.setMode(context, it)
+                        mode = it
+                    }
+                )
+            }
+            
+            if (mode == DataUsage.Mode.TEST) {
+                Text(
+                    text = "Used today: $usedToday of ${DataUsage.TEST_TITLES_PER_DAY}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+            credits?.let {
+                Text(
+                    text = "Watchmode $it",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DataUsageOption(
+    mode: DataUsage.Mode,
+    isSelected: Boolean,
+    onSelect: (DataUsage.Mode) -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect(mode) }
+            .focusable()
+            .onKeyEvent { keyEvent ->
+                when (keyEvent.key) {
+                    Key.Enter, Key.Spacebar, Key.DirectionCenter -> {
+                        onSelect(mode)
+                        true // Handled
+                    }
+                    else -> false // Let default handling occur
+                }
+            }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(
+            selected = isSelected,
+            onClick = { onSelect(mode) }
+        )
+        Column(modifier = Modifier.padding(start = 8.dp)) {
+            Text(
+                text = mode.label,
+                style = MaterialTheme.typography.bodyLarge
+            )
+            Text(
+                text = mode.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

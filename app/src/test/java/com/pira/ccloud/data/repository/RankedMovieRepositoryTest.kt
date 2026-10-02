@@ -69,6 +69,30 @@ class RankedMovieRepositoryTest {
     }
 
     @Test
+    fun givesTheTestAllowanceToTheBestRatedAndStillShowsTheRest() = runBlocking {
+        val pages = listOf(listOf(
+            movie(1, 2026).copy(imdb = 8.0), movie(2, 2026).copy(imdb = 7.0),
+            movie(3, 2026).copy(imdb = 6.5), movie(4, 2026).copy(imdb = 9.0)
+        ))
+        val requested = mutableListOf<Int>()
+        var allowance = 2
+        val repo = RankedMovieRepository(
+            fetchPage = { page, _, _ -> pages.getOrElse(page) { emptyList() } },
+            mayMergeRecentYears = { false },
+            lookUpFacts = { movie, _, cachedOnly ->
+                if (!cachedOnly) synchronized(requested) { requested += movie.id }
+                RankedMovieRepository.MovieFacts(movie, null, null)
+            },
+            mayFetchNewData = { allowance-- > 0 }
+        )
+        val result = repo.getRankedMovies(0, 0, FilterType.MOST_POPULAR, emptySet())
+        // Only the two best rated cost requests
+        assertEquals(setOf(4, 1), requested.toSet())
+        // The others are still listed, with the data already on the device
+        assertEquals(setOf(1, 2, 3, 4), result.movies.map { it.id }.toSet())
+    }
+
+    @Test
     fun newestKeepsTheServersOrderWithinAYear() = runBlocking {
         // Same year, no dates known: the server's newest-added-first order stays (not the IMDB order)
         val pages = listOf(listOf(movie(1, 2026).copy(imdb = 6.0), movie(2, 2026).copy(imdb = 9.0), movie(3, 2026).copy(imdb = 7.5)))

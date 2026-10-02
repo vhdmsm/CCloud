@@ -159,6 +159,8 @@ class MovieRankingTest {
         // Under 20% left: only this year's movies
         assertTrue(WatchmodeClient.allowsNewLookup(2026, 2026, 0.1))
         assertFalse(WatchmodeClient.allowsNewLookup(2025, 2026, 0.1))
+        // Unlimited mode drops the reserve: older movies too, until the credits run out
+        assertTrue(WatchmodeClient.allowsNewLookup(2025, 2026, 0.1, keepReserve = false))
     }
 
     @Test
