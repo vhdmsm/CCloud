@@ -37,7 +37,7 @@ fun rememberMovieInsight(movie: Movie, series: Boolean = false): MovieInsights.I
 
 /** The movie's (or series') awards and the value of each ranking criterion, below its description. */
 @Composable
-fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: Modifier = Modifier) {
+fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: Modifier = Modifier, series: Boolean = false) {
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -96,6 +96,19 @@ fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: 
                     parts.total, parts.rating, parts.awards, parts.popularity, parts.actors
                 ) + if (parts.awardsSpread) "\n(recent: the awards' share is spread over rating, popularity and actors, and its awards are added on top)" else ""
             )
+            if (series) {
+                // Series are ranked with their start year weighed in
+                val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                val startYear = MovieRanking.startYearScore(movie.year, currentYear)
+                val weight = MovieRanking.SERIES_START_YEAR_WEIGHT
+                ScoreRow(
+                    "Series rank",
+                    format(
+                        "%.2f = %.1f × Best Overall %.2f + %.1f × start year %.2f",
+                        (1 - weight) * parts.total + weight * startYear, 1 - weight, parts.total, weight, startYear
+                    ) + "\n(started ${movie.year}: ${MovieRanking.SERIES_MIN_START_YEAR} counts 0, $currentYear counts 1)"
+                )
+            }
             if (data.incomplete) {
                 Text(
                     text = "Some data isn't available right now (monthly limit, no connection or no key)",

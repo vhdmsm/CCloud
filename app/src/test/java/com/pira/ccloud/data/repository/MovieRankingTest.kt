@@ -294,4 +294,15 @@ class MovieRankingTest {
         assertEquals(3166070, WatchmodeClient.pickSeries(results, 1963, "Beary"))
         assertNull(WatchmodeClient.pickSeries(results, 2010, "Unknown"))
     }
+
+    @Test
+    fun startYearScoreGoesFromTheOldestListedYearToThisYear() {
+        val year = 2026
+        assertEquals(1.0, MovieRanking.startYearScore(year, year), 1e-9)
+        assertEquals(0.0, MovieRanking.startYearScore(MovieRanking.SERIES_MIN_START_YEAR, year), 1e-9)
+        assertEquals(0.0, MovieRanking.startYearScore(2010, year), 1e-9)
+        // Unknown year
+        assertEquals(0.0, MovieRanking.startYearScore(0, year), 1e-9)
+        assertEquals(6.0 / 7.0, MovieRanking.startYearScore(2025, year), 1e-9)
+    }
 }

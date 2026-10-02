@@ -130,6 +130,59 @@ class RankedMovieRepositoryTest {
     }
 
     @Test
+    fun ranksSeriesAcrossStartYearsWithTheStartYearWeighingALot() = runBlocking {
+        val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        // Newest first, as the server lists them: weak shows from this year, a strong one from last
+        // year further down (like The Pitt), an excellent one from six years ago
+        val pages = listOf(
+            (1..5).map { movie(it, year).copy(imdb = 6.5) },
+            listOf(movie(10, year - 1).copy(imdb = 8.8), movie(11, year - 1).copy(imdb = 7.0)),
+            listOf(movie(20, year - 6).copy(imdb = 9.0))
+        )
+        val data = mapOf(10 to Triple(0.9, 0.9, 0.6), 11 to Triple(0.4, 0.5, null), 20 to Triple(0.9, 0.95, null))
+        val repo = RankedMovieRepository(
+            fetchPage = { page, _, _ -> pages.getOrElse(page) { emptyList() } },
+            mayMergeRecentYears = { false },
+            lookUpFacts = { movie, _, _ ->
+                val (popularity, confidence, cast) = data[movie.id] ?: Triple(0.3, 0.4, null)
+                RankedMovieRepository.MovieFacts(movie, MovieInfo(popularity, 0.5, confidence, cast, "", "tt${movie.id}", "en"), null)
+            },
+            series = true,
+            minYear = { MovieRanking.SERIES_MIN_START_YEAR }
+        )
+        val result = repo.getRankedMovies(0, 0, FilterType.BEST_OVERALL, emptySet())
+        val order = result.movies.map { it.id }
+        // The strong show from last year leads, though this year's come first in the server's list
+        assertEquals(10, order.first())
+        // The excellent old one comes after this year's weak ones: the start year weighs a lot
+        assertEquals(20, order.last())
+        assertTrue(order.indexOf(20) > order.indexOf(1))
+        assertFalse(result.hasMore)
+    }
+
+    @Test
+    fun readsTheSeriesListOnlyAsFarAsAShowCouldStillMakeTheBatch() = runBlocking {
+        val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        // 300 top-rated shows from this year, then older ones that can't score as high
+        val pages = (0 until 10).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year).copy(imdb = 9.0) } } +
+            (10 until 20).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year - 3).copy(imdb = 9.0) } }
+        val requested = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
+        val repo = RankedMovieRepository(
+            fetchPage = { page, _, _ -> requested += page; pages.getOrElse(page) { emptyList() } },
+            mayMergeRecentYears = { false },
+            lookUpFacts = { movie, _, _ -> RankedMovieRepository.MovieFacts(movie, null, null) },
+            series = true,
+            minYear = { MovieRanking.SERIES_MIN_START_YEAR }
+        )
+        val first = repo.getRankedMovies(0, 0, FilterType.BEST_OVERALL, emptySet())
+        assertEquals(150, first.movies.size)
+        assertTrue(first.movies.all { it.year == year })
+        // One read of 8 pages was enough: no older page was asked for
+        assertEquals((0 until 8).toSet(), requested.toSet())
+        assertTrue(first.hasMore)
+    }
+
+    @Test
     fun newestKeepsTheServersOrderWithinAYear() = runBlocking {
         // Same year, no dates known: the server's newest-added-first order stays (not the IMDB order)
         val pages = listOf(listOf(movie(1, 2026).copy(imdb = 6.0), movie(2, 2026).copy(imdb = 9.0), movie(3, 2026).copy(imdb = 7.5)))

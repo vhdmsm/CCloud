@@ -726,7 +726,8 @@ fun SeriesDetailsContent(
             MovieScoresSection(
                 movie = seriesAsMovie,
                 insight = insight,
-                modifier = Modifier.padding(top = 16.dp)
+                modifier = Modifier.padding(top = 16.dp),
+                series = true
             )
         }
         

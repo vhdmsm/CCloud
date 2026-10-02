@@ -91,6 +91,16 @@ class RankedMovieRepository(
         fun result(facts: List<MovieFacts>, progress: String?) =
             rankedPage(facts, filterType, lastPage, hasMore, seen.toSet(), progress)
 
+        if (ranksSeriesAcrossYears(filterType)) {
+            val (batch, more) = nextSeriesBatch(genreId, filterType, seen) { progress -> onUpdate(result(emptyList(), progress)) }
+            hasMore = more
+            val year = Calendar.getInstance().get(Calendar.YEAR)
+            ranked += rankGroup(batch, filterType, emptyList(), year = null, priority = { MovieRanking.seriesPreScore(it, year) }) { facts, progress ->
+                onUpdate(result(facts, progress))
+            }
+            return result(ranked, null)
+        }
+
         if (!readsNewestFirst(filterType)) {
             // Skipped and weaker movies leave gaps, so read on until the batch fills
             val candidates = mutableListOf<Movie>()
@@ -170,6 +180,73 @@ class RankedMovieRepository(
         return result(ranked, null)
     }
 
+    // Series Best Overall is ranked across start years (the year is part of the score), not one year at a time
+    private fun ranksSeriesAcrossYears(filterType: FilterType) = series && filterType == FilterType.BEST_OVERALL
+
+    // The server's newest-first series list read so far, kept for the next loads of the same list
+    private class SeriesPool(val genreId: Int) {
+        val series = mutableListOf<Movie>()
+        val ids = HashSet<Int>()
+        var nextPage = 0
+        var exhausted = false
+        var oldestYearRead = Int.MAX_VALUE
+    }
+
+    @Volatile
+    private var seriesPool: SeriesPool? = null
+
+    /**
+     * The next series to rank: the [SERIES_BATCH_SIZE] likeliest best by the site's data (IMDb score
+     * and start year) not shown yet, and whether more are left. The list is read newest first only as
+     * far as a series could still make the batch: one that started earlier can't score higher.
+     */
+    private suspend fun nextSeriesBatch(
+        genreId: Int,
+        filterType: FilterType,
+        seen: MutableSet<Int>,
+        onProgress: (String) -> Unit
+    ): Pair<List<Movie>, Boolean> {
+        val year = Calendar.getInstance().get(Calendar.YEAR)
+        // A new list (nothing handled yet) reads the server again; later loads go on with the pool
+        val pool = seriesPool?.takeIf { it.genreId == genreId && seen.isNotEmpty() }
+            ?: SeriesPool(genreId).also { seriesPool = it }
+        val limit = minYear()
+        fun unseen() = pool.series.filter { it.id !in seen }
+        while (!pool.exhausted && pool.nextPage < MAX_SERIES_PAGES) {
+            val kth = unseen().map { MovieRanking.seriesPreScore(it, year) }.sortedDescending().getOrNull(SERIES_BATCH_SIZE - 1)
+            if (kth != null && pool.oldestYearRead != Int.MAX_VALUE &&
+                kth >= MovieRanking.seriesBestPreScore(pool.oldestYearRead, year)
+            ) break
+            onProgress("Reading the series list: ${pool.series.size} series…")
+            val first = pool.nextPage
+            val pages = coroutineScope {
+                (first until first + SERIES_PAGES_PER_READ).map { async { fetchPage(it, genreId, FilterType.BY_YEAR) } }.awaitAll()
+            }
+            pool.nextPage = first + SERIES_PAGES_PER_READ
+            for (page in pages) {
+                if (page.isEmpty()) {
+                    pool.exhausted = true
+                    break
+                }
+                for (movie in page) {
+                    if (movie.year > 0) pool.oldestYearRead = minOf(pool.oldestYearRead, movie.year)
+                    // Newest first: from a start year below the limit on, nothing more is listed
+                    if (limit != null && movie.year in 1 until limit) {
+                        pool.exhausted = true
+                        continue
+                    }
+                    if (pool.ids.add(movie.id) && isWanted(movie) && MovieRanking.isCandidate(movie, filterType)) {
+                        pool.series += movie
+                    }
+                }
+            }
+        }
+        val batch = unseen().sortedByDescending { MovieRanking.seriesPreScore(it, year) }.take(SERIES_BATCH_SIZE)
+        batch.forEach { seen += it.id }
+        val hasMore = pool.series.any { it.id !in seen } || (!pool.exhausted && pool.nextPage < MAX_SERIES_PAGES)
+        return batch to hasMore
+    }
+
     /**
      * Gets the data of [candidates] (cached first, then asked for, the best rated first) and returns
      * their facts; skipped movies are left out. [emit] gets [before] plus these movies while their
@@ -181,6 +258,8 @@ class RankedMovieRepository(
         before: List<MovieFacts>,
         // The movies' release year, for the progress line
         year: Int?,
+        // Which titles get their data first (and the test allowance): the best rated
+        priority: (Movie) -> Double = { it.imdb },
         emit: (List<MovieFacts>, String?) -> Unit
     ): List<MovieFacts> {
         // Each movie's best data so far; empty once the movie is skipped (e.g. Indian)
@@ -213,7 +292,7 @@ class RankedMovieRepository(
                 }
             }
             // The allowance (test mode) goes to the best rated first; the rest keep the data on the device
-            val (fetched, notFetched) = pending.sortedByDescending { candidates[it].imdb }.partition { mayFetchNewData() }
+            val (fetched, notFetched) = pending.sortedByDescending { priority(candidates[it]) }.partition { mayFetchNewData() }
             ready += notFetched
             fetched.map { i ->
                 async {
@@ -257,7 +336,13 @@ class RankedMovieRepository(
         val omdbMissing = !loading && filterType.needsOmdb && !OmdbClient.isAvailable && batch.any { it.awards == null }
         val year = Calendar.getInstance().get(Calendar.YEAR)
         val byScore = compareByDescending<MovieFacts> {
-            if (dataMissing || castMissing) it.imdb else MovieRanking.score(filterType, it, year)
+            when {
+                // Series weigh the start year in, with or without data
+                ranksSeriesAcrossYears(filterType) && dataMissing -> MovieRanking.seriesPreScore(it.movie, year)
+                ranksSeriesAcrossYears(filterType) -> MovieRanking.seriesBestOverallScore(it, year)
+                dataMissing || castMissing -> it.imdb
+                else -> MovieRanking.score(filterType, it, year)
+            }
         }
         // Ties go to the better IMDB score (so movies still waiting for data keep the IMDB order);
         // for Newest the server's order (newest added first) stays
@@ -344,6 +429,11 @@ class RankedMovieRepository(
         const val MAX_YEARS_PER_LOAD = 3
         const val UPDATE_INTERVAL_MS = 1_000L
         const val PAGES_READ_AHEAD = 3
+        // Series Best Overall: series that get data in one load, server pages read at a time, and
+        // the pages read at most (about 12,000 series)
+        const val SERIES_BATCH_SIZE = 150
+        const val SERIES_PAGES_PER_READ = 8
+        const val MAX_SERIES_PAGES = 400
     }
 }
 
@@ -470,6 +560,33 @@ object MovieRanking {
      */
     fun bestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
         bestOverallParts(facts, currentYear).total
+
+    // Series Best Overall: unlike movies, a series' start year weighs a lot (newer shows first);
+    // the movies' Best Overall (quality) is the rest
+    const val SERIES_START_YEAR_WEIGHT = 0.4
+    // Series that started before this aren't listed; it counts 0 for the start year, this year 1
+    const val SERIES_MIN_START_YEAR = 2019
+
+    /** 0..1: this year's series 1, down to 0 for [SERIES_MIN_START_YEAR] and before (0 when unknown). */
+    fun startYearScore(year: Int, currentYear: Int): Double {
+        if (year <= 0) return 0.0
+        val span = (currentYear - SERIES_MIN_START_YEAR).coerceAtLeast(1)
+        return ((year - SERIES_MIN_START_YEAR).toDouble() / span).coerceIn(0.0, 1.0)
+    }
+
+    /** Series Best Overall: quality (the movies' Best Overall) with the start year weighed in. */
+    fun seriesBestOverallScore(facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double =
+        (1 - SERIES_START_YEAR_WEIGHT) * bestOverallScore(facts, currentYear) +
+            SERIES_START_YEAR_WEIGHT * startYearScore(facts.movie.year, currentYear)
+
+    /** Before any data: the site's IMDb score in place of the quality, to pick which series get data first. */
+    fun seriesPreScore(movie: Movie, currentYear: Int): Double =
+        (1 - SERIES_START_YEAR_WEIGHT) * ((movie.imdb - 5.0) / 4.0).coerceIn(0.0, 1.0) +
+            SERIES_START_YEAR_WEIGHT * startYearScore(movie.year, currentYear)
+
+    /** The highest pre-score a series that started in [year] can have. */
+    fun seriesBestPreScore(year: Int, currentYear: Int): Double =
+        (1 - SERIES_START_YEAR_WEIGHT) + SERIES_START_YEAR_WEIGHT * startYearScore(year, currentYear)
 
     // Each part already weighted, so they add up to the Best Overall score
     data class BestOverallParts(

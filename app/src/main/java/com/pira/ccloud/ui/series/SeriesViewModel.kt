@@ -23,8 +23,8 @@ class SeriesViewModel : ViewModel() {
     companion object {
         // Genres hidden from the series list: Turkish, Indian, animation + anime
         private val HIDDEN_GENRE_IDS = setOf(35, 38, 3)
-        // Series that started before this year are hidden
-        private const val MIN_START_YEAR = 2019
+        // Series that started before this year are hidden (the series ranking scores from it too)
+        private const val MIN_START_YEAR = MovieRanking.SERIES_MIN_START_YEAR
         // Genres about older series, where the start year limit doesn't apply (classic, top 250)
         private val ALL_YEARS_GENRE_IDS = setOf(26, 32)
         // Pages fetched at most in one load when the filters leave pages empty
