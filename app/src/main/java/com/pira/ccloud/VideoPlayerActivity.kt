@@ -31,10 +31,8 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.input.key.type
 import kotlinx.coroutines.Job
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -130,6 +128,7 @@ import com.pira.ccloud.player.SubtitleTracks
 import com.pira.ccloud.data.model.VideoPlayerSettings
 import com.pira.ccloud.data.model.FontSettings
 import com.pira.ccloud.data.model.WatchedEpisode
+import com.pira.ccloud.utils.PlaybackPositions
 import com.pira.ccloud.utils.StorageUtils
 import com.pira.ccloud.ui.theme.FontManager
 import kotlinx.coroutines.CoroutineScope
@@ -183,11 +182,13 @@ class VideoPlayerActivity : ComponentActivity() {
         const val EXTRA_SERIES_ID = "series_id"
         const val EXTRA_SEASON_ID = "season_id"
         const val EXTRA_EPISODE_ID = "episode_id"
+        const val EXTRA_MOVIE_ID = "movie_id"
         const val REQUEST_WRITE_SETTINGS = 1001
         
-        fun start(context: Context, videoUrl: String) {
+        fun start(context: Context, videoUrl: String, movieId: Int? = null) {
             val intent = Intent(context, VideoPlayerActivity::class.java).apply {
                 putExtra(EXTRA_VIDEO_URL, videoUrl)
+                movieId?.let { putExtra(EXTRA_MOVIE_ID, it) }
             }
             context.startActivity(intent)
         }
@@ -230,14 +231,23 @@ class VideoPlayerActivity : ComponentActivity() {
         seriesId = intent.getIntExtra(EXTRA_SERIES_ID, -1).takeIf { it != -1 }
         seasonId = intent.getIntExtra(EXTRA_SEASON_ID, -1).takeIf { it != -1 }
         episodeId = intent.getIntExtra(EXTRA_EPISODE_ID, -1).takeIf { it != -1 }
+        val movieId = intent.getIntExtra(EXTRA_MOVIE_ID, -1).takeIf { it != -1 }
         
         if (videoUrl != null) {
+            // Where the last playback position of this movie/episode is kept
+            val playbackKey = when {
+                seriesId != null && seasonId != null && episodeId != null ->
+                    PlaybackPositions.episodeKey(seriesId!!, seasonId!!, episodeId!!)
+                movieId != null -> PlaybackPositions.movieKey(movieId)
+                else -> PlaybackPositions.urlKey(videoUrl!!)
+            }
             setContent {
                 VideoPlayerScreen(
                     videoUrl = videoUrl!!, 
                     seriesId = seriesId,
                     seasonId = seasonId,
                     episodeId = episodeId,
+                    playbackKey = playbackKey,
                     onBack = this::finish,
                     onRemoteActionsReady = { remoteActions = it }
                 ) { player ->
@@ -413,6 +423,7 @@ fun VideoPlayerScreen(
     seriesId: Int?,
     seasonId: Int?,
     episodeId: Int?,
+    playbackKey: String,
     onBack: () -> Unit,
     onRemoteActionsReady: (PlayerRemoteActions) -> Unit = {},
     onPlayerReady: (ExoPlayer) -> Unit
@@ -424,12 +435,20 @@ fun VideoPlayerScreen(
     var showControls by remember { mutableStateOf(true) }
     // Remote control navigation of the controls
     var controlFocused by remember { mutableStateOf(false) }
+    // Moving through the controls with the remote (started with Up/Down). On TV a control can also
+    // get focus by itself when the controls appear; until Up/Down, the arrows keep seeking.
+    var remoteNavigating by remember { mutableStateOf(false) }
     var controlsInteraction by remember { mutableStateOf(0) }
     var pendingControlFocus by remember { mutableStateOf<ControlFocus?>(null) }
     var backKeyConsumed by remember { mutableStateOf(false) }
     val settingsFocusRequester = remember { FocusRequester() }
     val seekBarFocusRequester = remember { FocusRequester() }
     var seekJob by remember { mutableStateOf<Job?>(null) }
+    // Holding left/right on the remote: where it will seek to on release, and what to show meanwhile
+    var holdSeekTarget by remember { mutableStateOf<Long?>(null) }
+    var holdSeekOrigin by remember { mutableStateOf(0L) }
+    var holdSeekLabel by remember { mutableStateOf<String?>(null) }
+    var lastHoldSeekTime by remember { mutableStateOf(0L) }
     var isSeeking by remember { mutableStateOf(false) }
     var playerError by remember { mutableStateOf<String?>(null) }
     var isRetrying by remember { mutableStateOf(false) }
@@ -530,6 +549,15 @@ fun VideoPlayerScreen(
         OnlineSubtitlesState(context, videoUrl, coroutineScope)
     }
 
+    // Where this movie/episode was left last time (null = start from the beginning)
+    val resumePositionMs = remember(playbackKey) {
+        try {
+            PlaybackPositions.get(context, playbackKey)
+        } catch (e: Exception) {
+            null
+        }
+    }
+    
     val exoPlayer = remember(context) {
         try {
             // Track selector that picks subtitle tracks by the chosen subtitle mode
@@ -552,7 +580,12 @@ fun VideoPlayerScreen(
                 .build()
             player.apply {
                 try {
-                    setMediaItem(buildMediaItem(videoUrl, onlineSubtitles.subtitle))
+                    val mediaItem = buildMediaItem(videoUrl, onlineSubtitles.subtitle)
+                    if (resumePositionMs != null) {
+                        setMediaItem(mediaItem, resumePositionMs)
+                    } else {
+                        setMediaItem(mediaItem)
+                    }
                     prepare()
                     // If we're retrying, seek to the current position
                     if (isRetrying && currentPosition > 0) {
@@ -621,17 +654,15 @@ fun VideoPlayerScreen(
     }
     
     // Seek from the remote; like the double tap, buffering after the seek must not pause playback
-    fun seekBy(deltaMs: Long) {
+    fun seekToPosition(position: Long) {
         val player = exoPlayer ?: return
         try {
             val wasPlaying = if (isSeeking) wasPlayingBeforeSeek else isPlaying
             wasPlayingBeforeSeek = wasPlaying
             isSeeking = true
-            val newPosition = (player.currentPosition + deltaMs)
-                .coerceIn(0L, player.duration.coerceAtLeast(0L))
+            val newPosition = position.coerceIn(0L, player.duration.coerceAtLeast(0L))
             player.seekTo(newPosition)
             currentPosition = newPosition
-            if (deltaMs < 0) showRewindIndicator = true else showForwardIndicator = true
             seekJob?.cancel()
             seekJob = coroutineScope.launch {
                 delay(200)
@@ -647,14 +678,71 @@ fun VideoPlayerScreen(
         }
     }
     
+    fun seekBy(deltaMs: Long) {
+        val player = exoPlayer ?: return
+        if (deltaMs < 0) showRewindIndicator = true else showForwardIndicator = true
+        seekToPosition(player.currentPosition + deltaMs)
+    }
+    
+    /**
+     * Left/right (or rewind/fast forward) on the remote. A press skips one step; holding the key
+     * skips faster the longer it is held, like YouTube, and seeks once when the key is released.
+     */
+    fun handleSeekKey(event: android.view.KeyEvent, forward: Boolean): Boolean {
+        val step = videoPlayerSettings.seekTimeSeconds * 1000L
+        when (event.action) {
+            android.view.KeyEvent.ACTION_DOWN -> {
+                showControls = true
+                if (event.repeatCount == 0) {
+                    holdSeekOrigin = currentPosition
+                    seekBy(if (forward) step else -step)
+                    return true
+                }
+                // Key held: move the shown position at intervals, faster the longer it is held
+                if (event.eventTime - lastHoldSeekTime < HOLD_SEEK_INTERVAL_MS) return true
+                lastHoldSeekTime = event.eventTime
+                val heldMs = event.eventTime - event.downTime
+                val multiplier = when {
+                    heldMs < 2_000 -> 1
+                    heldMs < 5_000 -> 3
+                    else -> 6
+                }
+                if (holdSeekTarget == null) {
+                    // Show the target position instead of the playing one until the key is released
+                    seekJob?.cancel()
+                    isSeeking = true
+                }
+                val start = holdSeekTarget ?: currentPosition
+                val target = (start + (if (forward) step else -step) * multiplier)
+                    .coerceIn(0L, duration.coerceAtLeast(0L))
+                holdSeekTarget = target
+                currentPosition = target
+                val offset = target - holdSeekOrigin
+                holdSeekLabel = (if (offset < 0) "-" else "+") + formatTime(kotlin.math.abs(offset)) + "  ×$multiplier"
+                if (forward) showForwardIndicator = true else showRewindIndicator = true
+                return true
+            }
+            android.view.KeyEvent.ACTION_UP -> {
+                holdSeekTarget?.let { target ->
+                    holdSeekTarget = null
+                    holdSeekLabel = null
+                    seekToPosition(target)
+                }
+                return true
+            }
+        }
+        return false
+    }
+    
     // Remote control: bring back hidden controls and put focus on the settings button or seek bar
     fun handleRemoteKey(event: android.view.KeyEvent): Boolean {
         val keyCode = event.keyCode
         // Back while moving through the controls hides them instead of leaving the video
         if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
-            if (event.action == android.view.KeyEvent.ACTION_DOWN && showControls && controlFocused) {
+            if (event.action == android.view.KeyEvent.ACTION_DOWN && showControls && remoteNavigating) {
                 showControls = false
                 controlFocused = false
+                remoteNavigating = false
                 backKeyConsumed = true
                 return true
             }
@@ -664,28 +752,33 @@ fun VideoPlayerScreen(
             }
             return false
         }
+        val seekForward = when (keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT, android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> true
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT, android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> false
+            else -> null
+        }
+        if (seekForward != null) {
+            val isArrow = keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT
+            // On a focused control the arrows move focus (the seek bar handles them itself)
+            if (isArrow && showControls && remoteNavigating && controlFocused) return false
+            if (event.action == android.view.KeyEvent.ACTION_DOWN) controlsInteraction++
+            return handleSeekKey(event, seekForward)
+        }
         if (event.action != android.view.KeyEvent.ACTION_DOWN) return false
         // Any key keeps the controls on screen a little longer
         controlsInteraction++
         when (keyCode) {
             android.view.KeyEvent.KEYCODE_DPAD_UP,
             android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
-                if (showControls && controlFocused) return false // move between the controls
+                if (showControls && remoteNavigating && controlFocused) return false // move between the controls
                 showControls = true
+                remoteNavigating = true
                 pendingControlFocus = if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
                     ControlFocus.SETTINGS
                 } else {
                     ControlFocus.SEEK_BAR
                 }
-                return true
-            }
-            // Skip back/forward, and show where playback is
-            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
-            android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                if (showControls && controlFocused) return false // move between the controls
-                showControls = true
-                val step = videoPlayerSettings.seekTimeSeconds * 1000L
-                seekBy(if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) -step else step)
                 return true
             }
             // Still play/pause (handled by the activity), and show the controls
@@ -700,9 +793,13 @@ fun VideoPlayerScreen(
                 cycleSubtitleMode = { cycleSubtitleMode() },
                 openTrackSelection = { showTrackSelectionDialog = true },
                 onKey = { handleRemoteKey(it) },
-                isControlFocused = { showControls && controlFocused }
+                isControlFocused = { showControls && remoteNavigating && controlFocused }
             )
         )
+    }
+    
+    LaunchedEffect(showControls) {
+        if (!showControls) remoteNavigating = false
     }
     
     // Focus the requested control once the controls are on screen
@@ -921,9 +1018,10 @@ fun VideoPlayerScreen(
         try {
             if (showControls && isPlaying) {
                 // Hide after 3 seconds, or 6 while moving through the controls with the remote
-                delay(if (controlFocused) 6000 else 3000)
+                delay(if (remoteNavigating) 6000 else 3000)
                 showControls = false
                 controlFocused = false
+                remoteNavigating = false
             }
         } catch (e: Exception) {
             // Ignore delay errors
@@ -931,7 +1029,7 @@ fun VideoPlayerScreen(
     }
     
     // Hide forward/rewind indicators after a delay
-    LaunchedEffect(showForwardIndicator) {
+    LaunchedEffect(showForwardIndicator, holdSeekLabel) {
         try {
             if (showForwardIndicator) {
                 delay(500) // Hide after 500ms
@@ -942,7 +1040,7 @@ fun VideoPlayerScreen(
         }
     }
     
-    LaunchedEffect(showRewindIndicator) {
+    LaunchedEffect(showRewindIndicator, holdSeekLabel) {
         try {
             if (showRewindIndicator) {
                 delay(500) // Hide after 500ms
@@ -963,7 +1061,44 @@ fun VideoPlayerScreen(
             }
         }
     }
-    
+
+    // Remember where playback is, so this movie/episode continues from here next time
+    fun savePlaybackPosition() {
+        val player = exoPlayer ?: return
+        try {
+            val playerDuration = player.duration
+            if (playerDuration <= 0 || playerDuration == C.TIME_UNSET) return
+            PlaybackPositions.save(context, playbackKey, player.currentPosition, playerDuration)
+        } catch (e: Exception) {
+            // Ignore storage errors
+        }
+    }
+
+    LaunchedEffect(exoPlayer) {
+        while (true) {
+            delay(5000)
+            if (exoPlayer?.isPlaying == true) savePlaybackPosition()
+        }
+    }
+
+    // Paused, ended, or the app went to the background
+    LaunchedEffect(isPlaying) {
+        if (!isPlaying) savePlaybackPosition()
+    }
+
+    // Declared after the player clean-up, so it runs before the player is released
+    DisposableEffect(Unit) {
+        onDispose { savePlaybackPosition() }
+    }
+
+    LaunchedEffect(Unit) {
+        if (resumePositionMs != null) {
+            // Also the position a retry after an early error goes back to
+            currentPosition = resumePositionMs
+            subtitleMessage = "Continuing from ${formatTime(resumePositionMs)}"
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1154,7 +1289,7 @@ fun VideoPlayerScreen(
                         modifier = Modifier.size(64.dp)
                     )
                     Text(
-                        text = "${videoPlayerSettings.seekTimeSeconds}s",
+                        text = holdSeekLabel ?: "${videoPlayerSettings.seekTimeSeconds}s",
                         color = Color.White,
                         modifier = Modifier.padding(top = 8.dp)
                     )
@@ -1180,7 +1315,7 @@ fun VideoPlayerScreen(
                         modifier = Modifier.size(64.dp)
                     )
                     Text(
-                        text = "${videoPlayerSettings.seekTimeSeconds}s",
+                        text = holdSeekLabel ?: "${videoPlayerSettings.seekTimeSeconds}s",
                         color = Color.White,
                         modifier = Modifier.padding(top = 8.dp)
                     )
@@ -1210,7 +1345,7 @@ fun VideoPlayerScreen(
                                 color = Color.Black.copy(alpha = 0.7f),
                                 shape = androidx.compose.foundation.shape.CircleShape
                             )
-                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape)
+                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape, remoteNavigating)
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
@@ -1230,7 +1365,7 @@ fun VideoPlayerScreen(
                             )
                             .align(Alignment.TopEnd)
                             .focusRequester(settingsFocusRequester)
-                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape)
+                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape, remoteNavigating)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
@@ -1255,7 +1390,7 @@ fun VideoPlayerScreen(
                                 color = Color.Black.copy(alpha = 0.7f),
                                 shape = androidx.compose.foundation.shape.CircleShape
                             )
-                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape)
+                            .remoteFocusBorder(androidx.compose.foundation.shape.CircleShape, remoteNavigating)
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -1316,18 +1451,15 @@ fun VideoPlayerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(seekBarFocusRequester)
-                                .remoteFocusBorder(RoundedCornerShape(12.dp))
+                                .remoteFocusBorder(RoundedCornerShape(12.dp), remoteNavigating)
                                 // Remote left/right on the seek bar skip back/forward
                                 .onPreviewKeyEvent { keyEvent ->
                                     val isLeft = keyEvent.key == Key.DirectionLeft
                                     if (!isLeft && keyEvent.key != Key.DirectionRight) {
                                         return@onPreviewKeyEvent false
                                     }
-                                    if (keyEvent.type == KeyEventType.KeyDown) {
-                                        val step = videoPlayerSettings.seekTimeSeconds * 1000L
-                                        seekBy(if (isLeft) -step else step)
-                                    }
-                                    true
+                                    controlsInteraction++
+                                    handleSeekKey(keyEvent.nativeKeyEvent, forward = !isLeft)
                                 }
                         )
                     }
@@ -1391,7 +1523,7 @@ fun VideoPlayerScreen(
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
-                                        .remoteFocusBorder(RoundedCornerShape(8.dp))
+                                        .remoteFocusBorder(RoundedCornerShape(8.dp), remoteNavigating)
                                         .clickable { showSpeedDropdown = true }
                                         .padding(4.dp)
                                 ) {
@@ -1444,7 +1576,7 @@ fun VideoPlayerScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = if (playbackSpeed == 1.0f) FontWeight.Bold else FontWeight.Normal,
                                 modifier = Modifier
-                                    .remoteFocusBorder(RoundedCornerShape(8.dp))
+                                    .remoteFocusBorder(RoundedCornerShape(8.dp), remoteNavigating)
                                     .clickable { playbackSpeed = 1.0f }
                                     .padding(4.dp),
                                 fontFamily = FontManager.loadFontFamily(context, fontSettings.fontType)
@@ -2070,16 +2202,19 @@ private fun OutlinedSubtitleText(
     }
 }
 
+// While a seek key is held, how often the shown position moves
+private const val HOLD_SEEK_INTERVAL_MS = 300L
+
 // Which control gets focus when the remote brings the controls back
 private enum class ControlFocus { SETTINGS, SEEK_BAR }
 
 // White border on the focused control, so remote navigation is visible on a TV
 @Composable
-private fun Modifier.remoteFocusBorder(shape: Shape): Modifier {
+private fun Modifier.remoteFocusBorder(shape: Shape, show: Boolean): Modifier {
     var focused by remember { mutableStateOf(false) }
     return this
         .onFocusChanged { focused = it.isFocused }
-        .then(if (focused) Modifier.border(3.dp, Color.White, shape) else Modifier)
+        .then(if (focused && show) Modifier.border(3.dp, Color.White, shape) else Modifier)
 }
 
 fun formatTime(milliseconds: Long): String {

@@ -20,6 +20,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class SeriesViewModel : ViewModel() {
+    companion object {
+        // Genres hidden from the series list: Turkish, Indian, animation + anime
+        private val HIDDEN_GENRE_IDS = setOf(35, 38, 3)
+        // Series that started before this year are hidden
+        private const val MIN_START_YEAR = 2019
+        // Genres about older series, where the start year limit doesn't apply (classic, top 250)
+        private val ALL_YEARS_GENRE_IDS = setOf(26, 32)
+        // Pages fetched at most in one load when the filters leave pages empty
+        private const val MAX_PAGES_PER_LOAD = 5
+    }
+    
     private val repository = SeriesRepository()
     private val genreRepository = GenreRepository()
     
@@ -32,7 +43,10 @@ class SeriesViewModel : ViewModel() {
                 seriesItem.toMovie()
             }
         },
-        series = true
+        series = true,
+        // Hidden series are dropped before their data is looked up (no Watchmode/OMDb credits spent)
+        isWanted = { movie -> seriesById[movie.id]?.let { isShown(it) } ?: true },
+        minYear = { if (appliesYearLimit()) MIN_START_YEAR else null }
     )
     
     var series by mutableStateOf<List<Series>>(emptyList())
@@ -138,15 +152,14 @@ class SeriesViewModel : ViewModel() {
                 rankingProgress = null
                 
                 val lastPage: Int
-                val hasMore: Boolean
-                val newSeries = if (selectedFilterType.isRanked) {
+                val filteredSeries: List<Series>
+                if (selectedFilterType.isRanked) {
                     if (!append) handledIds = emptySet()
                     // Earlier batches stay above the one loading; a first page replaces the list
                     val shownBefore = if (append) series else emptyList()
                     val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, handledIds) { update ->
                         // The batch shows as soon as the server's list is read and is re-ranked as data comes in
-                        series = shownBefore + update.movies.mapNotNull { it.toSeries() }
-                            .filter { LanguageUtils.shouldDisplayTitle(it.title) }
+                        series = shownBefore + update.movies.mapNotNull { it.toSeries() }.filter { isShown(it) }
                         rankingNotice = update.notice
                         rankingAttribution = update.attribution
                         rankingProgress = update.progress
@@ -156,25 +169,37 @@ class SeriesViewModel : ViewModel() {
                     rankingAttribution = ranked.attribution
                     rankingProgress = null
                     lastPage = ranked.lastPage
-                    hasMore = ranked.hasMore
                     if (append) series = shownBefore
-                    ranked.movies.mapNotNull { it.toSeries() }
+                    filteredSeries = ranked.movies.mapNotNull { it.toSeries() }.filter { isShown(it) }
+                    // Ranked filters can return an empty batch while the server still has pages
+                    canLoadMore = ranked.hasMore
                 } else {
-                    val result = repository.getSeries(page, selectedGenreId, selectedFilterType)
                     rankingNotice = null
                     rankingAttribution = null
-                    lastPage = page
-                    hasMore = result.isNotEmpty()
-                    result
+                    // Keep fetching while the filters leave a page empty, so scrolling doesn't stop early
+                    var loadedPage = page
+                    var pageSeries = emptyList<Series>()
+                    var reachedEnd = false
+                    for (attempt in 0 until MAX_PAGES_PER_LOAD) {
+                        val newSeries = repository.getSeries(loadedPage, selectedGenreId, selectedFilterType)
+                        if (newSeries.isEmpty()) {
+                            reachedEnd = true
+                            break
+                        }
+                        pageSeries = newSeries.filter { isShown(it) }
+                        // Sorted newest first: once a whole page started before the limit, the rest did too
+                        if (selectedFilterType == FilterType.BY_YEAR && appliesYearLimit() &&
+                            newSeries.all { it.year in 1 until MIN_START_YEAR }
+                        ) {
+                            reachedEnd = true
+                        }
+                        if (pageSeries.isNotEmpty() || reachedEnd) break
+                        loadedPage++
+                    }
+                    lastPage = loadedPage
+                    filteredSeries = pageSeries
+                    canLoadMore = !reachedEnd
                 }
-                
-                // Filter out series with Farsi titles
-                val filteredSeries = newSeries.filter { seriesItem ->
-                    LanguageUtils.shouldDisplayTitle(seriesItem.title)
-                }
-                
-                // Ranked filters can return an empty batch while the server still has pages
-                canLoadMore = if (selectedFilterType.isRanked) hasMore else filteredSeries.isNotEmpty()
                 
                 if (!append) {
                     series = filteredSeries
@@ -195,6 +220,19 @@ class SeriesViewModel : ViewModel() {
                 }
             }
         }
+    }
+    
+    private fun appliesYearLimit(): Boolean = selectedGenreId !in ALL_YEARS_GENRE_IDS
+    
+    private fun isShown(seriesItem: Series): Boolean {
+        // Filter out series with Farsi titles
+        if (!LanguageUtils.shouldDisplayTitle(seriesItem.title)) return false
+        // A hidden genre picked on purpose (e.g. "Turkish") still shows its series
+        val hiddenGenreIds = HIDDEN_GENRE_IDS - selectedGenreId
+        if (seriesItem.genres.any { it.id in hiddenGenreIds }) return false
+        // Year 0 means unknown, keep those
+        if (appliesYearLimit() && seriesItem.year in 1 until MIN_START_YEAR) return false
+        return true
     }
     
     fun loadMoreSeries() {

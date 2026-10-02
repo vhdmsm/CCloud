@@ -74,6 +74,9 @@ import com.pira.ccloud.data.model.Season
 import com.pira.ccloud.data.model.Series
 import com.pira.ccloud.data.model.Source
 import com.pira.ccloud.data.model.WatchedEpisode
+import com.pira.ccloud.formatTime
+import com.pira.ccloud.utils.PlaybackPositions
+import com.pira.ccloud.utils.rememberPlaybackPosition
 import androidx.compose.material.icons.filled.Check
 import com.pira.ccloud.ui.series.SeasonsViewModel
 import com.pira.ccloud.utils.DownloadUtils
@@ -827,6 +830,9 @@ fun SeriesDetailsContent(
                         EpisodeItem(
                             episode = episode,
                             isWatched = isEpisodeWatched,
+                            resumePosition = rememberPlaybackPosition(
+                                PlaybackPositions.episodeKey(series.id, selectedSeason.id, episode.id)
+                            ),
                             onPlayClick = { onEpisodeClick(episode) },
                             onDownloadClick = { onDownloadClick(episode) },
                             onImageClick = { imageUrl ->
@@ -856,6 +862,8 @@ fun SeriesDetailsContent(
 fun EpisodeItem(
     episode: Episode,
     isWatched: Boolean,
+    // Where the episode was left last time, if it wasn't finished
+    resumePosition: Long? = null,
     onPlayClick: () -> Unit,
     onDownloadClick: () -> Unit,
     onImageClick: (String) -> Unit
@@ -947,7 +955,14 @@ fun EpisodeItem(
                     }
                     
                     // Watched status text
-                    if (isWatched) {
+                    if (resumePosition != null) {
+                        Text(
+                            text = "Continue from ${formatTime(resumePosition)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else if (isWatched) {
                         Text(
                             text = "Watched",
                             style = MaterialTheme.typography.bodySmall,

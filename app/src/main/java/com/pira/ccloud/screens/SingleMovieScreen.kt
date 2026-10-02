@@ -62,6 +62,9 @@ import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.pira.ccloud.VideoPlayerActivity
+import com.pira.ccloud.formatTime
+import com.pira.ccloud.utils.PlaybackPositions
+import com.pira.ccloud.utils.rememberPlaybackPosition
 import com.pira.ccloud.components.DownloadOptionsDialog
 import com.pira.ccloud.components.ExpandableText
 import com.pira.ccloud.data.model.FavoriteItem
@@ -92,7 +95,10 @@ fun SingleMovieScreen(
             onBackClick = { navController.popBackStack() },
             onPlayClick = { source ->
                 // Launch video player activity
-                VideoPlayerActivity.start(context, source.url)
+                // A trailer is a separate short video: keep its position apart from the movie's
+                val isTrailer = source.url.contains("/tizer/", ignoreCase = true) ||
+                    source.quality.contains("تیزر")
+                VideoPlayerActivity.start(context, source.url, if (isTrailer) null else movie!!.id)
             },
             // Remove any padding from parent Scaffold to use full screen
             modifier = Modifier.fillMaxSize()
@@ -474,6 +480,16 @@ fun MovieDetailsContent(
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
             )
+            
+            // Where this movie was left last time; playing any quality continues from there
+            rememberPlaybackPosition(PlaybackPositions.movieKey(movie.id))?.let { position ->
+                Text(
+                    text = "Continue watching from ${formatTime(position)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp)
+                )
+            }
             
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),

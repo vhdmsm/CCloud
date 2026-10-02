@@ -31,7 +31,11 @@ class RankedMovieRepository(
     // The data a sort ranks a movie by (null: skip the movie); [cachedOnly] makes no requests
     private val lookUpFacts: (suspend (movie: Movie, filterType: FilterType, cachedOnly: Boolean) -> MovieFacts?)? = null,
     // Ranks series (given as movies) instead: Watchmode is searched for series
-    private val series: Boolean = false
+    private val series: Boolean = false,
+    // Movies left out of the list before any data is looked up for them (e.g. hidden genres)
+    private val isWanted: (Movie) -> Boolean = { true },
+    // Release years before this aren't shown: lists read newest first end there (null: no limit)
+    private val minYear: () -> Int? = { null }
 ) {
     data class RankedPage(
         val movies: List<Movie>,
@@ -92,7 +96,7 @@ class RankedMovieRepository(
             while (true) {
                 val movies = readServerPage(currentPage, genreId, filterType)
                 hasMore = movies.isNotEmpty()
-                candidates += movies.filter { seen.add(it.id) && MovieRanking.isCandidate(it, filterType) }
+                candidates += movies.filter { seen.add(it.id) && isWanted(it) && MovieRanking.isCandidate(it, filterType) }
                 lastPage = currentPage
                 if (candidates.size >= MIN_BATCH_SIZE || !hasMore || currentPage - page + 1 >= MAX_PAGES_PER_LOAD) break
                 currentPage++
@@ -130,9 +134,15 @@ class RankedMovieRepository(
                     hasMore = movies.isNotEmpty()
                     val unseen = movies.filter { it.id !in seen }
                     if (year == null) year = unseen.maxOfOrNull { it.year }
+                    // Read newest first: from a year below the limit on, nothing is shown
+                    val limit = minYear()
+                    if (year != null && limit != null && year < limit) {
+                        hasMore = false
+                        break
+                    }
                     val (sameYear, older) = year?.let { y -> unseen.partition { it.year >= y } } ?: (emptyList<Movie>() to emptyList())
                     sameYear.forEach { seen.add(it.id) }
-                    candidates += sameYear.filter { MovieRanking.isCandidate(it, filterType) }
+                    candidates += sameYear.filter { isWanted(it) && MovieRanking.isCandidate(it, filterType) }
                     lastPage = if (older.isNotEmpty()) currentPage - 1 else currentPage
                     if (older.isNotEmpty() || !hasMore) break
                     if (currentPage - firstPage + 1 >= MAX_PAGES_PER_YEAR) {

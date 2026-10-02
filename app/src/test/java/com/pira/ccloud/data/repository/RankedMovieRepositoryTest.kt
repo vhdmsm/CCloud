@@ -69,6 +69,43 @@ class RankedMovieRepositoryTest {
     }
 
     @Test
+    fun leavesOutUnwantedMoviesButStillCountsThemAsHandled() = runBlocking {
+        val pages = listOf(listOf(movie(1, 2026), movie(2, 2026, "انیمیشن + انیمه"), movie(3, 2026)))
+        val repo = RankedMovieRepository(
+            fetchPage = { page, _, _ -> pages.getOrElse(page) { emptyList() } },
+            mayMergeRecentYears = { false },
+            isWanted = { it.genres.none { genre -> genre.title == "انیمیشن + انیمه" } }
+        )
+        val result = repo.getRankedMovies(0, 0, FilterType.NEWEST, emptySet())
+        assertEquals(setOf(1, 3), result.movies.map { it.id }.toSet())
+        // Not taken again by the next load
+        assertTrue(2 in result.handledIds)
+    }
+
+    @Test
+    fun endsTheListAtTheMinimumYear() = runBlocking {
+        val pages = listOf(
+            (1..3).map { movie(it, 2020) } + (4..5).map { movie(it, 2019) },
+            (6..7).map { movie(it, 2018) },
+            (8..9).map { movie(it, 2017) }
+        )
+        val repo = RankedMovieRepository(
+            fetchPage = { page, _, _ -> pages.getOrElse(page) { emptyList() } },
+            mayMergeRecentYears = { false },
+            minYear = { 2019 }
+        )
+        val first = repo.getRankedMovies(0, 0, FilterType.NEWEST, emptySet())
+        assertEquals((1..3).toSet(), first.movies.map { it.id }.toSet())
+        assertTrue(first.hasMore)
+        val second = repo.getRankedMovies(first.lastPage + 1, 0, FilterType.NEWEST, first.handledIds)
+        assertEquals(setOf(4, 5), second.movies.map { it.id }.toSet())
+        // 2018 is below the limit: nothing older is read or shown
+        val third = repo.getRankedMovies(second.lastPage + 1, 0, FilterType.NEWEST, second.handledIds)
+        assertTrue(third.movies.isEmpty())
+        assertFalse(third.hasMore)
+    }
+
+    @Test
     fun newestKeepsTheServersOrderWithinAYear() = runBlocking {
         // Same year, no dates known: the server's newest-added-first order stays (not the IMDB order)
         val pages = listOf(listOf(movie(1, 2026).copy(imdb = 6.0), movie(2, 2026).copy(imdb = 9.0), movie(3, 2026).copy(imdb = 7.5)))
