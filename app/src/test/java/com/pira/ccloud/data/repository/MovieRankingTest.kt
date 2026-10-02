@@ -380,4 +380,60 @@ class MovieRankingTest {
         assertEquals(SeriesPopularity.normalize("The Queen’s Gambit"), SeriesPopularity.normalize("The Queens Gambit"))
         assertEquals(0.5, SeriesPopularity(listOf("Ted" to 2020, "The Queen's Gambit" to 2020)).score("The Queens Gambit", 2020)!!, 1e-9)
     }
+
+    @Test
+    fun picksTheSeriesOfTheSameNameThatStartedClosestToTheSitesYear() {
+        // Queen of Tears (Korean, 2024) and its Turkish remake (2025)
+        val korean = WatchmodeClient.SearchResult(10, "tv_series", 2024, "Queen of Tears")
+        val turkish = WatchmodeClient.SearchResult(11, "tv_series", 2025, "Queen of Tears")
+        assertEquals(listOf(10, 11), WatchmodeClient.seriesCandidates(listOf(turkish, korean), 2024, "Queen of Tears"))
+        // A Thai "Mouse" from 2025, not the Korean one from 2021
+        val koreanMouse = WatchmodeClient.SearchResult(20, "tv_series", 2021, "Mouse")
+        val thaiMouse = WatchmodeClient.SearchResult(21, "tv_series", 2025, "Mouse")
+        assertEquals(21, WatchmodeClient.pickSeries(listOf(koreanMouse, thaiMouse), 2025, "Mouse"))
+        assertEquals(20, WatchmodeClient.pickSeries(listOf(koreanMouse, thaiMouse), 2021, "Mouse"))
+    }
+
+    @Test
+    fun picksTheMovieOfTheSameNameFirst() {
+        val other = WatchmodeClient.SearchResult(1, "movie", 2024, "Heat Wave")
+        val named = WatchmodeClient.SearchResult(2, "movie", 2024, "Heat")
+        assertEquals(2, WatchmodeClient.pickMovie(listOf(other, named), 2024, "Heat"))
+        // No name match: the first of the year, as before
+        assertEquals(1, WatchmodeClient.pickMovie(listOf(other, named), 2024, "Something Else"))
+        assertEquals(1, WatchmodeClient.pickMovie(listOf(other, named), 2024))
+    }
+
+    @Test
+    fun tellsTheLanguagesOfASeriesFromTheSitesCountries() {
+        fun countries(vararg names: String) = names.mapIndexed { i, name -> Country(i, name, "") }
+        assertEquals(setOf("ko"), MovieRanking.languagesOf(countries("کره جنوبی")))
+        assertEquals(setOf("en", "ko"), MovieRanking.languagesOf(countries("امریکا", "کره جنوبی")))
+        // A country it doesn't know: no check
+        assertEquals(emptySet<String>(), MovieRanking.languagesOf(countries("امریکا", "مغولستان")))
+        assertEquals(emptySet<String>(), MovieRanking.languagesOf(emptyList()))
+    }
+
+    @Test
+    fun looksUpDoubtfulSeriesMatchesMadeBeforeTheCurrentRulesOnce() {
+        fun doubtful(release: String, language: String, year: Int, languages: Set<String>, version: Int = 0, found: Boolean = true) =
+            WatchmodeClient.isDoubtfulSeriesMatch(version, found, release, language, year, languages)
+        // The Turkish remake cached for the Korean series
+        assertTrue(doubtful("2025-01-01", "tr", 2024, setOf("ko")))
+        // The 1980 Shogun for the 2024 one
+        assertTrue(doubtful("1980-09-15", "en", 2024, setOf("en")))
+        // Nothing found before (e.g. an apostrophe in the name)
+        assertTrue(doubtful("", "", 2020, emptySet(), found = false))
+        // A good match stays, and a match made under the current rules is never looked up again
+        assertFalse(doubtful("2022-02-18", "en", 2022, setOf("en")))
+        assertFalse(doubtful("2025-01-01", "tr", 2024, setOf("ko"), version = 2))
+    }
+
+    @Test
+    fun popularityGoesToTheSeriesOfTheSameNameWithTheClosestStartYear() {
+        // The Korean "Mouse" (2021) is more popular than the Thai one (2025)
+        val popularity = SeriesPopularity(listOf("Mouse" to 2021, "Other" to 2024, "Mouse" to 2025, "Last" to 2020))
+        assertEquals(0.5, popularity.score("Mouse", 2025)!!, 1e-9)
+        assertEquals(1.0, popularity.score("Mouse", 2021)!!, 1e-9)
+    }
 }

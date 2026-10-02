@@ -195,6 +195,8 @@ class RankedMovieRepository(
     private class SeriesPool(val genreId: Int) {
         val series = mutableListOf<Movie>()
         val ids = HashSet<Int>()
+        // Title and year of the series taken: the site lists some series twice
+        val titles = HashSet<String>()
         var nextPage = 0
         var exhausted = false
         var oldestYearRead = Int.MAX_VALUE
@@ -260,7 +262,9 @@ class RankedMovieRepository(
                         pool.exhausted = true
                         continue
                     }
-                    if (pool.ids.add(movie.id) && isWanted(movie) && MovieRanking.isCandidate(movie, filterType)) {
+                    if (pool.ids.add(movie.id) && isWanted(movie) && MovieRanking.isCandidate(movie, filterType) &&
+                        pool.titles.add("${SeriesPopularity.normalize(movie.title)}|${movie.year}")
+                    ) {
                         pool.series += movie
                     }
                 }
@@ -413,6 +417,9 @@ class RankedMovieRepository(
         return custom(movie, filterType, cachedOnly)
     }
 
+    // Series of the same name are told apart by language (from the site's countries)
+    private fun languages(movie: Movie): Set<String> = if (series) MovieRanking.languagesOf(movie.country) else emptySet()
+
     // Watchmode gives the IMDb id for OMDb (Most Awards skips both when the description names the
     // awards). Movies Watchmode says are Indian or Turkish are dropped before any OMDb request.
     private suspend fun lookUp(movie: Movie, filterType: FilterType, cachedOnly: Boolean): MovieFacts? {
@@ -421,13 +428,15 @@ class RankedMovieRepository(
         val info = when {
             // Answers from the cache even when the credits are out
             needsInfo && WatchmodeClient.isConfigured -> if (cachedOnly) {
-                WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, cachedOnly = true, series = series)
+                WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, cachedOnly = true, series = series, languages = languages(movie))
             } else {
-                watchmodePermits.withPermit { WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, series = series) }
+                watchmodePermits.withPermit {
+                    WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, series = series, languages = languages(movie))
+                }
             }
             // Newest uses a release date Watchmode already gave for another sort, at no cost
             filterType == FilterType.NEWEST && WatchmodeClient.isConfigured ->
-                WatchmodeClient.movie(movie.title, movie.year, withCast = false, cachedOnly = true, series = series)
+                WatchmodeClient.movie(movie.title, movie.year, withCast = false, cachedOnly = true, series = series, languages = languages(movie))
             else -> null
         }
         if (info != null && MovieRanking.isExcludedOrigin(info)) return null
@@ -479,6 +488,33 @@ object MovieRanking {
     private const val RATING_VOTES_PRIOR = 10_000.0
 
     // Indian and Turkish movies are left out of the ranked sorts, by the server's country or genre
+    // The site's countries -> the original languages (ISO 639-1, as Watchmode gives them) their
+    // series are likely in; countries not listed tell nothing
+    private val countryLanguages: Map<String, Set<String>> = mapOf(
+        "امریکا" to setOf("en"), "آمریکا" to setOf("en"), "انگلستان" to setOf("en"), "استرالیا" to setOf("en"),
+        "کانادا" to setOf("en", "fr"), "ایرلند" to setOf("en"), "نیوزیلند" to setOf("en"),
+        "آفریقای جنوبی" to setOf("en"), "نیجریه" to setOf("en"),
+        "چین" to setOf("zh", "cn"), "تایوان" to setOf("zh", "cn"), "هنگ کنگ" to setOf("zh", "cn"),
+        "ژاپن" to setOf("ja"), "کره جنوبی" to setOf("ko"), "کره" to setOf("ko"), "تایلند" to setOf("th"),
+        "ترکیه" to setOf("tr"), "هند" to setOf("hi", "ta", "te", "ml", "kn", "bn", "mr", "pa", "gu"),
+        "پاکستان" to setOf("ur"), "فیلیپین" to setOf("tl", "fil", "en"), "اندونزی" to setOf("id"),
+        "اسپانیا" to setOf("es", "ca"), "مکزیک" to setOf("es"), "آرژانتین" to setOf("es"), "کلمبیا" to setOf("es"),
+        "برزیل" to setOf("pt"), "پرتغال" to setOf("pt"), "فرانسه" to setOf("fr"), "بلژیک" to setOf("fr", "nl"),
+        "آلمان" to setOf("de"), "اتریش" to setOf("de"), "سوئیس" to setOf("de", "fr", "it"), "ایتالیا" to setOf("it"),
+        "سوئد" to setOf("sv"), "دانمارک" to setOf("da"), "نروژ" to setOf("no", "nb", "nn"), "فنلاند" to setOf("fi"),
+        "هلند" to setOf("nl"), "لهستان" to setOf("pl"), "روسیه" to setOf("ru"), "رومانی" to setOf("ro"),
+        "لبنان" to setOf("ar"), "سوریه" to setOf("ar"), "مصر" to setOf("ar"), "عربستان" to setOf("ar"),
+        "امارات" to setOf("ar"), "اردن" to setOf("ar"), "کویت" to setOf("ar")
+    )
+
+    /** The languages a title from these (site) countries is likely in; empty when unknown. */
+    fun languagesOf(countries: List<com.pira.ccloud.data.model.Country>): Set<String> {
+        val known = countries.map { countryLanguages[it.title.trim()] }
+        // One unknown country (a co-production) and any language may be right
+        if (known.isEmpty() || known.any { it == null }) return emptySet()
+        return known.filterNotNull().flatten().toSet()
+    }
+
     private val excludedCountryNames = setOf("india", "هند", "هندوستان", "turkey", "türkiye", "turkiye", "ترکیه")
     private val excludedGenreNames = setOf("هندی", "ترکی")
     // Hindi, Tamil, Telugu, Malayalam, Kannada, Bengali, Marathi, Punjabi, Gujarati, Turkish

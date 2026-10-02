@@ -47,6 +47,10 @@ object WatchmodeClient {
     private const val RESERVE_SHARE = 0.2
     // Years a series may run before the year the site lists it by
     private const val MAX_SEASONS_SPAN = 10
+    // Series of the same name whose details are read at most, to find the one in the site's language
+    private const val MAX_SERIES_TRIES = 3
+    // Bumped when the way titles are matched changes, so doubtful older matches are looked up again
+    private const val MATCH_VERSION = 2
     // The most popular series list: pages of 250 read (a credit each) and how long it's kept
     private const val POPULAR_SERIES_PAGES = 12
     private const val POPULAR_SERIES_TTL_MS = 7L * 24 * 60 * 60 * 1000
@@ -132,13 +136,16 @@ object WatchmodeClient {
      * Data for the movie (or with [series], the series) with this title and year, or null when
      * Watchmode doesn't know it or can't answer. [withCast] also reads how popular the lead actors
      * are (more credits). [cachedOnly] answers from the cache alone, without any request.
+     * [languages]: the series' likely original languages (from the site's countries; empty when
+     * unknown), to tell series of the same name apart.
      */
     suspend fun movie(
         title: String,
         year: Int,
         withCast: Boolean,
         cachedOnly: Boolean = false,
-        series: Boolean = false
+        series: Boolean = false,
+        languages: Set<String> = emptySet()
     ): MovieInfo? = withContext(Dispatchers.IO) {
         val query = title.replace(Regex("\\((19|20)\\d{2}\\)"), " ").replace(Regex("\\s+"), " ").trim()
         if (query.isEmpty()) return@withContext null
@@ -148,10 +155,10 @@ object WatchmodeClient {
         val mayLookUp = !cachedOnly && isAvailableSoon && allowsNewLookup(year, Calendar.getInstance().get(Calendar.YEAR), remainingShare, DataUsage.keepsCreditReserve)
 
         val stored = try {
-            readCache(key)?.let { JSONObject(it) }?.takeUnless { series && isOlderNamesake(it, year) } ?: run {
+            readCache(key)?.let { JSONObject(it) }?.takeUnless { series && isDoubtfulSeriesMatch(it, year, languages) } ?: run {
                 if (!mayLookUp) return@withContext null
-                val id = findTitle(query, year, series)
-                (if (id == null) JSONObject() else details(id)).also { writeCache(key, it.toString()) }
+                val found = if (series) findSeries(query, year, languages) else findTitle(query, year)?.let { details(it) }
+                (found ?: JSONObject()).put("v", MATCH_VERSION).also { writeCache(key, it.toString()) }
             }
         } catch (e: IOException) {
             offlineUntil = System.currentTimeMillis() + SHORT_BACKOFF_MS
@@ -241,50 +248,102 @@ object WatchmodeClient {
             row.optString(0).takeIf { it.isNotBlank() }?.let { it to row.optInt(1) }
         }
 
-    // A series cached before [pickSeries] skipped older series of the same name (it started long
-    // before the site's year), looked up again
-    private fun isOlderNamesake(stored: JSONObject, year: Int): Boolean {
-        val started = stored.optString("release_date").take(4).toIntOrNull() ?: return false
-        return year > 0 && started < year - MAX_SEASONS_SPAN
+    /**
+     * Whether a cached series match should be looked up again: matches made before the current
+     * rules (closest start year, names without accents or apostrophes, the language checked) that
+     * found nothing, or found a series that started more than a year from the site's year, or in
+     * another language than the site's countries (Queen of Tears matched its Turkish remake).
+     * Each is looked up once; the new answer is kept.
+     */
+    private fun isDoubtfulSeriesMatch(stored: JSONObject, year: Int, languages: Set<String>): Boolean =
+        isDoubtfulSeriesMatch(
+            stored.optInt("v"), stored.has("id"), stored.optString("release_date"),
+            stored.optString("original_language"), year, languages
+        )
+
+    /** [version]: the rules the match was made under; [found]: false when nothing was found. */
+    fun isDoubtfulSeriesMatch(
+        version: Int,
+        found: Boolean,
+        releaseDate: String,
+        language: String,
+        year: Int,
+        languages: Set<String>
+    ): Boolean {
+        if (version >= MATCH_VERSION) return false
+        if (!found) return true
+        val started = releaseDate.take(4).toIntOrNull()
+        if (year > 0 && started != null && kotlin.math.abs(started - year) > 1) return true
+        val lang = language.lowercase()
+        return languages.isNotEmpty() && lang.isNotEmpty() && lang !in languages
     }
 
     data class SearchResult(val id: Int, val type: String, val year: Int, val name: String = "")
 
-    private suspend fun findTitle(query: String, year: Int, series: Boolean): Int? {
+    private suspend fun search(query: String, series: Boolean): List<SearchResult> {
         val results = call("/search/", "search_field" to "name", "search_value" to query, "types" to if (series) "tv" else "movie")
-            .optJSONArray("title_results") ?: return null
-        val found = (0 until results.length()).map { results.getJSONObject(it) }
+            .optJSONArray("title_results") ?: return emptyList()
+        return (0 until results.length()).map { results.getJSONObject(it) }
             .map { SearchResult(it.optInt("id"), it.optString("type"), it.optInt("year"), it.optString("name")) }
-        return if (series) pickSeries(found, year, query) else pickMovie(found, year)
     }
 
+    private suspend fun findTitle(query: String, year: Int): Int? = pickMovie(search(query, series = false), year, query)
+
     /**
-     * The series with this name (accents aside: "Shogun" is "Shōgun") that started in [year] or up
-     * to [MAX_SEASONS_SPAN] years before, the closest first: the site may list a series by a later
-     * season's year, Watchmode by its first. An older series of the same name (the 1980 "Shogun")
-     * isn't taken. Without a name match, one that started within a year of [year].
+     * The details of the series: of the [seriesCandidates] (at most [MAX_SERIES_TRIES]), the first
+     * in one of [languages]; when none is, the closest unless it's in a language the ranked sorts
+     * leave out (then none: a Korean series isn't dropped for its Turkish remake).
      */
-    fun pickSeries(results: List<SearchResult>, year: Int, query: String): Int? {
-        val shows = results.filter { it.id > 0 && (it.type.startsWith("tv_series") || it.type == "tv_miniseries") }
-        val named = shows.filter { SeriesPopularity.normalize(it.name) == SeriesPopularity.normalize(query) }
-        val byName = if (year > 0) {
-            named.filter { it.year in (year - MAX_SEASONS_SPAN)..(year + 1) }.maxByOrNull { it.year }
-        } else {
-            named.firstOrNull()
+    private suspend fun findSeries(query: String, year: Int, languages: Set<String>): JSONObject? {
+        var first: JSONObject? = null
+        for (id in seriesCandidates(search(query, series = true), year, query).take(MAX_SERIES_TRIES)) {
+            val found = details(id)
+            val language = found.optString("original_language").lowercase()
+            if (languages.isEmpty() || language.isEmpty() || language in languages) return found
+            if (first == null) first = found
         }
-        return (byName ?: shows.firstOrNull { year > 0 && kotlin.math.abs(it.year - year) <= 1 })?.id
+        return first?.takeUnless {
+            val language = it.optString("original_language").lowercase()
+            MovieRanking.isExcludedLanguage(language) && languages.none { l -> MovieRanking.isExcludedLanguage(l) }
+        }
+    }
+
+    /** The first of the [seriesCandidates]. */
+    fun pickSeries(results: List<SearchResult>, year: Int, query: String): Int? =
+        seriesCandidates(results, year, query).firstOrNull()
+
+    /**
+     * Series with this name (accents and apostrophes aside: "Shogun" is "Shōgun") that started
+     * within [MAX_SEASONS_SPAN] years before [year] or a year after, the closest start year first:
+     * the site lists a series by its first year, and the same name is often another series (the
+     * 1980 "Shogun", a remake, a Thai "Mouse" and a Korean one). Without a name match, the first
+     * that started within a year of [year].
+     */
+    fun seriesCandidates(results: List<SearchResult>, year: Int, query: String): List<Int> {
+        val shows = results.filter { it.id > 0 && (it.type.startsWith("tv_series") || it.type == "tv_miniseries") }
+        val name = SeriesPopularity.normalize(query)
+        val named = shows.filter { SeriesPopularity.normalize(it.name) == name }
+        val byName = if (year > 0) {
+            // Stable sort: equally close ones keep Watchmode's order
+            named.filter { it.year in (year - MAX_SEASONS_SPAN)..(year + 1) }.sortedBy { kotlin.math.abs(it.year - year) }
+        } else {
+            named
+        }
+        if (byName.isNotEmpty()) return byName.map { it.id }.distinct()
+        return listOfNotNull(shows.firstOrNull { year > 0 && kotlin.math.abs(it.year - year) <= 1 }?.id)
     }
 
     /**
-     * The search result of the same year (±1, release dates differ between countries). Watchmode
-     * files some films as "tv_movie" or "tv_special" (concerts, documentaries), so any type but a
-     * series is accepted, a "movie" first.
+     * The search result of the same year (±1, release dates differ between countries), one with
+     * the same name first. Watchmode files some films as "tv_movie" or "tv_special" (concerts,
+     * documentaries), so any type but a series is accepted, a "movie" first.
      */
-    fun pickMovie(results: List<SearchResult>, year: Int): Int? {
+    fun pickMovie(results: List<SearchResult>, year: Int, query: String = ""): Int? {
         val films = results.filter { it.id > 0 && !it.type.startsWith("tv_series") && it.type != "tv_miniseries" }
             .sortedBy { if (it.type == "movie") 0 else 1 }
-        val match = if (year > 0) films.firstOrNull { kotlin.math.abs(it.year - year) <= 1 } else films.firstOrNull()
-        return match?.id
+        val inYear = if (year > 0) films.filter { kotlin.math.abs(it.year - year) <= 1 } else films
+        val name = SeriesPopularity.normalize(query)
+        return (inYear.firstOrNull { name.isNotEmpty() && SeriesPopularity.normalize(it.name) == name } ?: inYear.firstOrNull())?.id
     }
 
     // Keeps only what the sorts use

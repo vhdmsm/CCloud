@@ -23,7 +23,10 @@ object MovieInsights {
 
     /** [series]: [movie] is a series (as a movie), looked up on Watchmode as one. */
     suspend fun load(movie: Movie, series: Boolean = false): Insight {
-        val info = if (WatchmodeClient.isConfigured) WatchmodeClient.movie(movie.title, movie.year, withCast = true, series = series) else null
+        val info = if (WatchmodeClient.isConfigured) WatchmodeClient.movie(
+            movie.title, movie.year, withCast = true, series = series,
+            languages = if (series) MovieRanking.languagesOf(movie.country) else emptySet()
+        ) else null
         val describedAwards = MovieDescription.awards(movie)
         val details = info?.imdbId?.takeIf { it.isNotEmpty() && OmdbClient.isConfigured }
             ?.let { OmdbClient.details(it, movie.year) }

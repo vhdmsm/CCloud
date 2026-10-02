@@ -15,20 +15,29 @@ class SeriesPopularity(titles: List<Pair<String, Int>>) {
 
     /**
      * 0..1: 1 for the most popular series down to 0 for the last listed; null when it isn't
-     * listed. The site may list a series by a later season's year, Watchmode by its first, so a
-     * series that started up to [MAX_YEARS_BEFORE] years earlier (or a year later) matches too.
+     * listed. A series that started up to [MAX_YEARS_BEFORE] years earlier (or a year later)
+     * matches too; of several with the name (a Korean "Mouse" and a Thai one), the closest start
+     * year counts, not the most popular.
      */
     fun score(title: String, year: Int): Double? {
         if (size == 0) return null
         val place = places[normalize(title)]
             ?.filter { (_, started) -> started <= 0 || year <= 0 || started in (year - MAX_YEARS_BEFORE)..(year + 1) }
-            ?.minOfOrNull { it.first }
+            ?.minWithOrNull(compareBy({ (_, started) -> distance(started, year) }, { it.first }))
+            ?.first
             ?: return null
         return 1.0 - place.toDouble() / size
     }
 
     companion object {
         private const val MAX_YEARS_BEFORE = 5
+
+        // Years between the start years; unknown years come after the known ones
+        private fun distance(started: Int, year: Int): Int = when {
+            year <= 0 -> 0
+            started <= 0 -> MAX_YEARS_BEFORE + 2
+            else -> kotlin.math.abs(started - year)
+        }
 
         /**
          * Lowercase letters and digits only, without accents, apostrophes (the site writes "The

@@ -210,6 +210,26 @@ class RankedMovieRepositoryTest {
     }
 
     @Test
+    fun aSeriesTheSiteListsTwiceIsRankedOnce() = runBlocking {
+        val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        val pages = listOf(listOf(
+            movie(1, year).copy(title = "Duet of Shadows"), movie(2, year).copy(title = "Duet of Shadows"),
+            // Same name, another year: another series
+            movie(3, year - 1).copy(title = "Duet of Shadows")
+        ))
+        val repo = RankedMovieRepository(
+            fetchPage = { page, _, _ -> pages.getOrElse(page) { emptyList() } },
+            mayMergeRecentYears = { false },
+            lookUpFacts = { movie, _, _ -> RankedMovieRepository.MovieFacts(movie, null, null) },
+            series = true,
+            minYear = { MovieRanking.SERIES_MIN_START_YEAR },
+            seriesPopularity = { null }
+        )
+        val result = repo.getRankedMovies(0, 0, FilterType.BEST_OVERALL, emptySet())
+        assertEquals(setOf(1, 3), result.movies.map { it.id }.toSet())
+    }
+
+    @Test
     fun newestKeepsTheServersOrderWithinAYear() = runBlocking {
         // Same year, no dates known: the server's newest-added-first order stays (not the IMDB order)
         val pages = listOf(listOf(movie(1, 2026).copy(imdb = 6.0), movie(2, 2026).copy(imdb = 9.0), movie(3, 2026).copy(imdb = 7.5)))
