@@ -30,8 +30,8 @@ class SeriesRepository : BaseRepository() {
     }
     
     /**
-     * Like [getSeries], but the page may come from the device when the list was read less than
-     * [maxAgeMs] ago (see [SiteListCache]); for the ranked sorts, which read many pages.
+     * Like [getSeries], but the page may come from the list kept on the device (read again in the
+     * background when older than [maxAgeMs], see [SiteListCache]); for the ranked sorts.
      */
     suspend fun getSeriesCached(page: Int, genreId: Int, filterType: FilterType, maxAgeMs: Long): List<Series> {
         return withContext(Dispatchers.IO) {

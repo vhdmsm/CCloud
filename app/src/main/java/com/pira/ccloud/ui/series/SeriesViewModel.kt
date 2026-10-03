@@ -29,8 +29,9 @@ class SeriesViewModel : ViewModel() {
         private val ALL_YEARS_GENRE_IDS = setOf(26, 32)
         // Pages fetched at most in one load when the filters leave pages empty
         private const val MAX_PAGES_PER_LOAD = 5
-        // How long the site's newest-first list read for the ranked sorts is kept on the device
-        private const val SITE_LIST_MAX_AGE_MS = 6L * 60 * 60 * 1000
+        // After this, the site's newest-first list kept for the ranked sorts is read again in the
+        // background (the kept one shows meanwhile)
+        private const val SITE_LIST_MAX_AGE_MS = 2L * 60 * 60 * 1000
     }
     
     private val repository = SeriesRepository()
@@ -40,8 +41,8 @@ class SeriesViewModel : ViewModel() {
     private val seriesById = ConcurrentHashMap<Int, Series>()
     private val rankedRepository = RankedMovieRepository(
         fetchPage = { page, genreId, filterType ->
-            // The ranked sorts read the whole newest-first list (about 200 pages), kept on the device
-            // for a few hours
+            // The ranked sorts read the whole newest-first list (about 240 pages), kept on the device
+            // (SiteListCache)
             val pageSeries = if (filterType == FilterType.BY_YEAR) {
                 repository.getSeriesCached(page, genreId, filterType, SITE_LIST_MAX_AGE_MS)
             } else {

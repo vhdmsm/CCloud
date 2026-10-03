@@ -20,12 +20,13 @@ import kotlinx.coroutines.launch
 
 class MoviesViewModel : ViewModel() {
     companion object {
-        // How long the site's newest-first list read for the ranked sorts is kept on the device
-        private const val SITE_LIST_MAX_AGE_MS = 3L * 60 * 60 * 1000
+        // After this, the site's newest-first list kept for the ranked sorts is read again in the
+        // background (the kept one shows meanwhile)
+        private const val SITE_LIST_MAX_AGE_MS = 60L * 60 * 1000
     }
 
     private val repository = MovieRepository()
-    // The ranked sorts read the newest-first list (many pages), kept on the device for a few hours
+    // The ranked sorts read the newest-first list (many pages), kept on the device (SiteListCache)
     private val rankedRepository = RankedMovieRepository({ page, genreId, filterType ->
         if (filterType == FilterType.BY_YEAR) {
             repository.getMoviesCached(page, genreId, filterType, SITE_LIST_MAX_AGE_MS)

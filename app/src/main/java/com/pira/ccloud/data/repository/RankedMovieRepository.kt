@@ -10,6 +10,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -469,6 +471,8 @@ class RankedMovieRepository(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // The site's repositories report a cancelled read as an error
+                currentCoroutineContext().ensureActive()
                 log("page $page failed (try ${attempt + 1}): ${e.message}")
                 delay(PAGE_RETRY_DELAY_MS * (attempt + 1))
             }
