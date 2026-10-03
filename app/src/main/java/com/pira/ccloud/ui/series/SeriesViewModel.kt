@@ -11,6 +11,7 @@ import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.model.Series
 import com.pira.ccloud.data.repository.GenreRepository
 import com.pira.ccloud.data.repository.MovieRanking
+import com.pira.ccloud.data.repository.RankedListStore
 import com.pira.ccloud.data.repository.RankedMovieRepository
 import com.pira.ccloud.data.repository.SeriesRepository
 import com.pira.ccloud.utils.LanguageUtils
@@ -105,6 +106,8 @@ class SeriesViewModel : ViewModel() {
     val filterTypes: List<FilterType> = FilterType.entries.filter { MovieRanking.isAvailable(it) }
     
     private var loadJob: Job? = null
+    // The list shown is the one saved when it was last ranked; it's being ranked again
+    private var showingSaved = false
     // Series the ranked sorts already dealt with (shown or skipped), so the next load doesn't take them again
     private var handledIds: Set<Int> = emptySet()
     // Bumped on every load, so only the latest one updates the loading and error state
@@ -138,6 +141,7 @@ class SeriesViewModel : ViewModel() {
     // The old list (another sort or genre) mustn't stay up while the new one loads
     private fun showNewList() {
         series = emptyList()
+        showingSaved = false
         rankingNotice = null
         rankingAttribution = null
         refresh()
@@ -163,19 +167,36 @@ class SeriesViewModel : ViewModel() {
                 
                 val lastPage: Int
                 val filteredSeries: List<Series>
+                val listKey = "${selectedFilterType.name}-$selectedGenreId"
                 if (selectedFilterType.isRanked) {
                     if (!append) handledIds = emptySet()
+                    // The list as last ranked shows at once while it's ranked again (until then it
+                    // doesn't load more)
+                    val saved = if (!append) RankedListStore.series(listKey) else null
+                    if (saved != null && series.isEmpty()) {
+                        series = saved.series.filter { isShown(it) }
+                        rankingNotice = saved.notice
+                        rankingAttribution = saved.attribution
+                        showingSaved = true
+                        canLoadMore = false
+                    }
+                    val updatesSaved = saved != null
                     // Earlier batches stay above the one loading; a first page replaces the list
                     val shownBefore = if (append) series else emptyList()
                     val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, handledIds) { update ->
                         // The batch shows as soon as the server's list is read and is re-ranked as data
-                        // comes in. Ranking runs off the main thread; the list is updated on it (in order,
-                        // and not after this load is cancelled)
+                        // comes in (a saved list stays until the new one is done). Ranking runs off the
+                        // main thread; the list is updated on it (in order, and not after this load is
+                        // cancelled)
                         launch {
-                            series = shownBefore + update.movies.mapNotNull { it.toSeries() }.filter { isShown(it) }
-                            rankingNotice = update.notice
-                            rankingAttribution = update.attribution
-                            rankingProgress = update.progress
+                            if (updatesSaved) {
+                                rankingProgress = update.progress?.let { "Updating the list: $it" }
+                            } else {
+                                series = shownBefore + update.movies.mapNotNull { it.toSeries() }.filter { isShown(it) }
+                                rankingNotice = update.notice
+                                rankingAttribution = update.attribution
+                                rankingProgress = update.progress
+                            }
                         }
                     }
                     handledIds = handledIds + ranked.handledIds
@@ -217,6 +238,13 @@ class SeriesViewModel : ViewModel() {
                 
                 if (!append) {
                     series = filteredSeries
+                    showingSaved = false
+                    // Shown at once the next time the app opens
+                    if (selectedFilterType.isRanked && filteredSeries.isNotEmpty()) {
+                        val notice = rankingNotice
+                        val attribution = rankingAttribution
+                        launch { RankedListStore.saveSeries(listKey, filteredSeries, notice, attribution) }
+                    }
                 } else {
                     series = series + filteredSeries
                 }
@@ -255,9 +283,10 @@ class SeriesViewModel : ViewModel() {
         }
     }
     
-    // A failed first load starts over; a failed load-more tries the same pages again
+    // A failed first load (or one that was updating a saved list) starts over; a failed load-more
+    // tries the same pages again
     fun retry() {
-        if (series.isEmpty()) refresh() else loadSeries(currentPage + 1, append = true)
+        if (series.isEmpty() || showingSaved) refresh() else loadSeries(currentPage + 1, append = true)
     }
     
     fun refresh() {

@@ -42,6 +42,7 @@ import androidx.navigation.compose.rememberNavController
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import com.pira.ccloud.data.repository.OmdbClient
 import com.pira.ccloud.data.repository.DataUsage
+import com.pira.ccloud.data.repository.RankedListStore
 import com.pira.ccloud.data.repository.SiteListCache
 import com.pira.ccloud.data.repository.WatchmodeClient
 import com.pira.ccloud.navigation.AppNavigation
@@ -64,6 +65,8 @@ class MainActivity : ComponentActivity() {
         DataUsage.init(this)
         // The site's lists as read for the ranked sorts, kept for a few hours
         SiteListCache.init(this)
+        // Each ranked list as last shown, to show at once when the app opens
+        RankedListStore.init(this)
         // Set default orientation to portrait for mobile/tablet
         // For TV, we don't set orientation as it's typically fixed
         if (!DeviceUtils.isTv(this)) {
