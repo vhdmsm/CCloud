@@ -79,6 +79,7 @@ import com.pira.ccloud.data.model.FavoriteItem
 import com.pira.ccloud.navigation.AppScreens
 import com.pira.ccloud.utils.StorageUtils
 import java.util.UUID
+import com.pira.ccloud.components.focusHighlight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -816,6 +817,7 @@ fun FavoriteItemCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .focusHighlight(focusedScale = 1.03f)
             .clickable { onClick() }
             .focusable()
             .focusRequester(focusRequester)

@@ -81,6 +81,13 @@ import androidx.compose.material.icons.filled.Check
 import com.pira.ccloud.ui.series.SeasonsViewModel
 import com.pira.ccloud.utils.DownloadUtils
 import com.pira.ccloud.utils.StorageUtils
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import com.pira.ccloud.components.FocusWhenReady
+import com.pira.ccloud.components.focusHighlight
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.focus.focusProperties
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -408,7 +415,16 @@ fun SeriesDetailsContent(
     val seriesAsMovie = remember(series) { series.toMovie() }
     val insight = rememberMovieInsight(seriesAsMovie, series = true)
     
+    val listState = rememberLazyListState()
+    // The remote starts on the selected season (the episodes are right below), scrolled to first:
+    // the seasons are the list's 7th item (header, genres, description title and text, scores, title)
+    val seasonFocus = remember { FocusRequester() }
+    // Down from the seasons goes to the first episode's Play (not its Download, which comes first)
+    val firstEpisodePlay = remember { FocusRequester() }
+    val hasEpisodes = seasonsViewModel.seasons.getOrNull(selectedSeasonIndex)?.episodes?.isNotEmpty() == true
+    FocusWhenReady(seasonFocus, seasonsViewModel.seasons.isNotEmpty()) { listState.scrollToItem(SEASONS_ROW_INDEX) }
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize()
     ) {
@@ -754,6 +770,9 @@ fun SeriesDetailsContent(
                         val season = seasonsViewModel.seasons[index]
                         Card(
                             modifier = Modifier
+                                .then(if (index == selectedSeasonIndex) Modifier.focusRequester(seasonFocus) else Modifier)
+                                .focusProperties { if (hasEpisodes) down = firstEpisodePlay }
+                                .focusHighlight(focusedScale = 1.06f)
                                 .clickable { selectedSeasonIndex = index },
                             colors = CardDefaults.cardColors(
                                 containerColor = if (selectedSeasonIndex == index) 
@@ -826,7 +845,7 @@ fun SeriesDetailsContent(
                         modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
                     )
                     
-                    selectedSeason.episodes.forEach { episode ->
+                    selectedSeason.episodes.forEachIndexed { episodeIndex, episode ->
                         val isEpisodeWatched = StorageUtils.isEpisodeWatched(context, series.id, selectedSeason.id, episode.id)
                         EpisodeItem(
                             episode = episode,
@@ -835,6 +854,7 @@ fun SeriesDetailsContent(
                                 PlaybackPositions.episodeKey(series.id, selectedSeason.id, episode.id)
                             ),
                             onPlayClick = { onEpisodeClick(episode) },
+                            playModifier = if (episodeIndex == 0) Modifier.focusRequester(firstEpisodePlay) else Modifier,
                             onDownloadClick = { onDownloadClick(episode) },
                             onImageClick = { imageUrl ->
                                 episodeImageUrl = imageUrl
@@ -859,6 +879,9 @@ fun SeriesDetailsContent(
     }
 }
 
+// Index of the seasons row in the series page's list
+private const val SEASONS_ROW_INDEX = 6
+
 @Composable
 fun EpisodeItem(
     episode: Episode,
@@ -867,7 +890,8 @@ fun EpisodeItem(
     resumePosition: Long? = null,
     onPlayClick: () -> Unit,
     onDownloadClick: () -> Unit,
-    onImageClick: (String) -> Unit
+    onImageClick: (String) -> Unit,
+    playModifier: Modifier = Modifier
 ) {
     Card(
         modifier = Modifier
@@ -905,6 +929,7 @@ fun EpisodeItem(
                             contentDescription = episode.title,
                             modifier = Modifier
                                 .size(60.dp)
+                                .focusHighlight(shape = RoundedCornerShape(8.dp), focusedScale = 1.1f, outlineWidth = 2.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { onImageClick(episode.image) },
                             contentScale = ContentScale.Crop
@@ -987,6 +1012,7 @@ fun EpisodeItem(
                         onClick = { onDownloadClick() },
                         modifier = Modifier
                             .size(36.dp)
+                            .focusHighlight(shape = CircleShape, focusedScale = 1.15f, outlineWidth = 2.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Download,
@@ -1002,8 +1028,9 @@ fun EpisodeItem(
                 // Play button
                 IconButton(
                     onClick = { onPlayClick() },
-                    modifier = Modifier
+                    modifier = playModifier
                         .size(36.dp)
+                        .focusHighlight(shape = CircleShape, focusedScale = 1.15f, outlineWidth = 2.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,

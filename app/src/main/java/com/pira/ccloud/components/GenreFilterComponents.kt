@@ -91,6 +91,7 @@ fun FilterTypeSelector(
         modifier = Modifier
             .width(150.dp)
             .height(36.dp)
+            .focusHighlight(shape = RoundedCornerShape(18.dp), focusedScale = 1.06f, outlineWidth = 2.dp)
             .clickable { expanded = true },
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
@@ -209,6 +210,7 @@ fun GenreSelector(
         modifier = Modifier
             .width(150.dp)
             .height(36.dp)
+            .focusHighlight(shape = RoundedCornerShape(18.dp), focusedScale = 1.06f, outlineWidth = 2.dp)
             .clickable { expanded = true },
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
