@@ -46,11 +46,19 @@ import com.pira.ccloud.BuildConfig
 import com.pira.ccloud.R
 import com.pira.ccloud.utils.StorageUtils
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import androidx.compose.runtime.snapshotFlow
+
+private const val MIN_SPLASH_MS = 600L
+private const val MAX_SPLASH_MS = 2000L
 
 @Composable
 fun SplashScreen(
     onTimeout: () -> Unit,
-    backgroundColor: Color
+    backgroundColor: Color,
+    // True once the first screen has something to show (the lists load during the splash)
+    isReady: () -> Boolean = { false }
 ) {
     val context = LocalContext.current
     var showWelcomeSlider by remember { mutableStateOf(!StorageUtils.isWelcomeCompleted(context)) }
@@ -69,8 +77,12 @@ fun SplashScreen(
     } else {
         // Original splash screen
         LaunchedEffect(Unit) {
-            // Wait for some time before navigating
-            delay(2000)
+            // Shown briefly, then until the first screen is ready (the list saved when it was last
+            // ranked shows at once) or 2 seconds at most
+            delay(MIN_SPLASH_MS)
+            withTimeoutOrNull(MAX_SPLASH_MS - MIN_SPLASH_MS) {
+                snapshotFlow { isReady() }.first { it }
+            }
             onTimeout()
         }
         

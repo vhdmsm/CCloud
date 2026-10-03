@@ -50,6 +50,7 @@ fun AppNavigation(
         composable(route = AppScreens.Splash.route) {
             val isSystemInDarkMode = isSystemInDarkTheme()
             SplashScreen(
+                isReady = { moviesViewModel.movies.isNotEmpty() },
                 onTimeout = {
                     navController.popBackStack()
                     navController.navigate(AppScreens.Movies.route) {
