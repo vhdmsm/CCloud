@@ -163,9 +163,9 @@ class RankedMovieRepositoryTest {
     @Test
     fun readsTheSeriesListOnlyAsFarAsAShowCouldStillMakeTheBatch() = runBlocking {
         val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-        // 600 top-rated shows from this year, then older ones that can't score as high
-        val pages = (0 until 20).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year).copy(imdb = 9.0) } } +
-            (20 until 30).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year - 3).copy(imdb = 9.0) } }
+        // 900 top-rated shows from this year, then older ones that can't score as high
+        val pages = (0 until 30).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year).copy(imdb = 9.0) } } +
+            (30 until 60).map { p -> (0 until 30).map { movie(p * 30 + it + 1, year - 3).copy(imdb = 9.0) } }
         val requested = java.util.Collections.synchronizedSet(mutableSetOf<Int>())
         val repo = RankedMovieRepository(
             fetchPage = { page, _, _ -> requested += page; pages.getOrElse(page) { emptyList() } },
@@ -178,8 +178,8 @@ class RankedMovieRepositoryTest {
         val first = repo.getRankedMovies(0, 0, FilterType.BEST_OVERALL, emptySet())
         assertEquals(300, first.movies.size)
         assertTrue(first.movies.all { it.year == year })
-        // Two reads of 8 pages were enough: no older page was asked for
-        assertEquals((0 until 16).toSet(), requested.toSet())
+        // One read of 24 pages was enough: no older page was asked for
+        assertEquals((0 until 24).toSet(), requested.toSet())
         assertTrue(first.hasMore)
     }
 

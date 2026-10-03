@@ -8,7 +8,8 @@ import java.text.Normalizer
  * high for little-known series, popularity tells the well-known ones apart.
  */
 class SeriesPopularity(titles: List<Pair<String, Int>>) {
-    private val size = titles.size
+    // Series on the list
+    val size = titles.size
     // Normalized title -> (place in the list, start year) of each series with that title
     private val places: Map<String, List<Pair<Int, Int>>> = titles.withIndex()
         .groupBy({ normalize(it.value.first) }, { it.index to it.value.second })
@@ -44,13 +45,19 @@ class SeriesPopularity(titles: List<Pair<String, Int>>) {
          * Queens Gambit") or a "(2024)" year: "Shōgun" -> "shogun", "The Queen's Gambit" -> "the queens gambit".
          */
         fun normalize(title: String): String {
-            val withoutYear = title.replace(Regex("\\((19|20)\\d{2}\\)"), " ")
+            val withoutYear = title.replace(YEAR, " ")
             return Normalizer.normalize(withoutYear, Normalizer.Form.NFD)
-                .replace(Regex("\\p{M}+"), "")
-                .replace(Regex("['’ʼ`]"), "")
+                .replace(MARKS, "")
+                .replace(APOSTROPHES, "")
                 .lowercase()
-                .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
+                .replace(NOT_LETTERS, " ")
                 .trim()
         }
+
+        // Compiled once: titles are normalized thousands of times while a list is ranked
+        private val YEAR = Regex("\\((19|20)\\d{2}\\)")
+        private val MARKS = Regex("\\p{M}+")
+        private val APOSTROPHES = Regex("['’ʼ`]")
+        private val NOT_LETTERS = Regex("[^\\p{L}\\p{N}]+")
     }
 }

@@ -64,6 +64,13 @@ import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.pira.ccloud.components.GenreFilterSection
+import com.pira.ccloud.components.focusHighlight
+import com.pira.ccloud.components.FocusListOnOpen
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import com.pira.ccloud.data.model.Genre
 import com.pira.ccloud.data.model.Series
 import com.pira.ccloud.ui.series.SeriesViewModel
@@ -313,8 +320,15 @@ fun SeriesGrid(
     val context = LocalContext.current
     
     val columns = DeviceUtils.getGridColumns(LocalContext.current.resources)
+    val gridState = rememberLazyGridState()
+    // The item the remote was on (kept while one is open), focused when the screen opens
+    var focusedIndex by rememberSaveable { mutableStateOf(0) }
+    val focusTarget = focusedIndex.coerceIn(0, (seriesList.size - 1).coerceAtLeast(0))
+    val itemFocus = remember { FocusRequester() }
+    FocusListOnOpen(gridState, itemFocus, focusTarget, seriesList.isNotEmpty())
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
+        state = gridState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -322,6 +336,9 @@ fun SeriesGrid(
     ) {
         itemsIndexed(seriesList) { index, seriesItem ->
             SeriesItem(
+                modifier = Modifier
+                    .then(if (index == focusTarget) Modifier.focusRequester(itemFocus) else Modifier)
+                    .onFocusChanged { if (it.hasFocus) focusedIndex = index },
                 series = seriesItem,
                 onClick = {
                     // Save series to storage
@@ -410,12 +427,14 @@ fun ModernCircularProgressIndicatorSeries() {
 @Composable
 fun SeriesItem(
     series: Series,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(310.dp) // Fixed height for all cards
+            .focusHighlight()
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),

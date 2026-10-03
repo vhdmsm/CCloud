@@ -22,7 +22,15 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -34,13 +42,19 @@ import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.NavGraph.Companion.findStartDestination
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SidebarNavigation(navController: NavController) {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
+    // Coming into the sidebar with the remote lands on the current section (as on Netflix), not
+    // on whichever item is level with where the remote was
+    val itemFocus = remember { AppScreens.screens.associate { it.route to FocusRequester() } }
 
     NavigationRail(
         modifier = Modifier
+            .focusProperties { enter = { itemFocus[currentRoute] ?: FocusRequester.Default } }
+            .focusGroup()
             .fillMaxHeight()
             .width(100.dp) // Increased width for better TV experience
             .padding(top = 24.dp, bottom = 24.dp), // Add padding top and bottom
@@ -59,14 +73,17 @@ fun SidebarNavigation(navController: NavController) {
             ) {
                 AppScreens.screens.filter { it.showSidebar }.forEach { screen ->
                     val isSelected = currentRoute == screen.route
+                    // The item the remote is on shows clearly (white, larger, a light circle behind)
+                    val interaction = remember { MutableInteractionSource() }
+                    val isFocused by interaction.collectIsFocusedAsState()
                     val scale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.1f else 1f,
+                        targetValue = if (isFocused) 1.2f else if (isSelected) 1.1f else 1f,
                         animationSpec = tween(durationMillis = 200),
                         label = "scale"
                     )
                     
                     val iconColor by animateColorAsState(
-                        targetValue = if (isSelected) 
+                        targetValue = if (isFocused) Color.White else if (isSelected) 
                             androidx.compose.material3.MaterialTheme.colorScheme.primary 
                         else 
                             androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
@@ -75,7 +92,7 @@ fun SidebarNavigation(navController: NavController) {
                     )
                     
                     val textColor by animateColorAsState(
-                        targetValue = if (isSelected) 
+                        targetValue = if (isFocused) Color.White else if (isSelected) 
                             androidx.compose.material3.MaterialTheme.colorScheme.primary 
                         else 
                             androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
@@ -84,6 +101,7 @@ fun SidebarNavigation(navController: NavController) {
                     )
 
                     NavigationRailItem(
+                        modifier = Modifier.focusRequester(itemFocus.getValue(screen.route)),
                         icon = {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -95,7 +113,14 @@ fun SidebarNavigation(navController: NavController) {
                                         .scale(scale),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    if (isSelected) {
+                                    if (isFocused) {
+                                        androidx.compose.material3.Surface(
+                                            modifier = Modifier.size(52.dp),
+                                            shape = CircleShape,
+                                            color = Color.White.copy(alpha = 0.22f),
+                                            border = androidx.compose.foundation.BorderStroke(2.dp, Color.White)
+                                        ) {}
+                                    } else if (isSelected) {
                                         androidx.compose.material3.Surface(
                                             modifier = Modifier.size(48.dp), // Increased size
                                             shape = CircleShape,
@@ -114,13 +139,14 @@ fun SidebarNavigation(navController: NavController) {
                                     text = stringResource(screen.resourceId),
                                     color = textColor,
                                     fontSize = androidx.compose.material3.MaterialTheme.typography.labelMedium.fontSize, // Increased font size
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Normal,
                                     maxLines = 1
                                 )
                             }
                         },
                         label = null, // We're using custom label in icon
                         selected = isSelected,
+                        interactionSource = interaction,
                         onClick = {
                             // Only navigate if we're not already on the selected screen
                             if (currentRoute != screen.route) {

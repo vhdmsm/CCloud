@@ -11,6 +11,7 @@ import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.data.repository.GenreRepository
 import com.pira.ccloud.data.repository.MovieRanking
 import com.pira.ccloud.data.repository.MovieRepository
+import com.pira.ccloud.data.repository.RankedListStore
 import com.pira.ccloud.data.repository.RankedMovieRepository
 import com.pira.ccloud.data.repository.WatchmodeClient
 import com.pira.ccloud.utils.LanguageUtils
@@ -19,8 +20,21 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class MoviesViewModel : ViewModel() {
+    companion object {
+        // After this, the site's newest-first list kept for the ranked sorts is read again in the
+        // background (the kept one shows meanwhile)
+        private const val SITE_LIST_MAX_AGE_MS = 60L * 60 * 1000
+    }
+
     private val repository = MovieRepository()
-    private val rankedRepository = RankedMovieRepository(repository::getMovies)
+    // The ranked sorts read the newest-first list (many pages), kept on the device (SiteListCache)
+    private val rankedRepository = RankedMovieRepository({ page, genreId, filterType ->
+        if (filterType == FilterType.BY_YEAR) {
+            repository.getMoviesCached(page, genreId, filterType, SITE_LIST_MAX_AGE_MS)
+        } else {
+            repository.getMovies(page, genreId, filterType)
+        }
+    })
     private val genreRepository = GenreRepository()
     
     var movies by mutableStateOf<List<Movie>>(emptyList())
@@ -69,6 +83,8 @@ class MoviesViewModel : ViewModel() {
     val filterTypes: List<FilterType> = FilterType.entries.filter { MovieRanking.isAvailable(it) }
     
     private var loadJob: Job? = null
+    // The list shown is the one saved when it was last ranked; it's being ranked again
+    private var showingSaved = false
     // Movies the ranked sorts already dealt with (shown or skipped), so the next load doesn't take them again
     private var handledIds: Set<Int> = emptySet()
     // Bumped on every load, so only the latest one updates the loading and error state
@@ -104,6 +120,7 @@ class MoviesViewModel : ViewModel() {
     // The old list (another sort or genre) mustn't stay up while the new one loads
     private fun showNewList() {
         movies = emptyList()
+        showingSaved = false
         rankingNotice = null
         rankingAttribution = null
         refresh()
@@ -127,16 +144,37 @@ class MoviesViewModel : ViewModel() {
                 
                 val lastPage: Int
                 val hasMore: Boolean
+                val listKey = "${selectedFilterType.name}-$selectedGenreId"
                 val newMovies = if (selectedFilterType.isRanked) {
                     if (!append) handledIds = emptySet()
+                    // The list as last ranked shows at once while it's ranked again (until then it
+                    // doesn't load more)
+                    val saved = if (!append) RankedListStore.movies(listKey) else null
+                    if (saved != null && movies.isEmpty()) {
+                        movies = saved.movies
+                        rankingNotice = saved.notice
+                        rankingAttribution = saved.attribution
+                        showingSaved = true
+                        canLoadMore = false
+                    }
+                    val updatesSaved = saved != null
                     // Earlier batches stay above the one loading; a first page replaces the list
                     val shownBefore = if (append) movies else emptyList()
                     val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, handledIds) { update ->
-                        // The batch shows as soon as the server's list is read and is re-ranked as data comes in
-                        movies = shownBefore + update.movies.filter { LanguageUtils.shouldDisplayTitle(it.title) }
-                        rankingNotice = update.notice
-                        rankingAttribution = update.attribution
-                        rankingProgress = update.progress
+                        // The batch shows as soon as the server's list is read and is re-ranked as data
+                        // comes in (a saved list stays until the new one is done). Ranking runs off the
+                        // main thread; the list is updated on it (in order, and not after this load is
+                        // cancelled)
+                        launch {
+                            if (updatesSaved) {
+                                rankingProgress = update.progress?.let { "Updating the list: $it" }
+                            } else {
+                                movies = shownBefore + update.movies.filter { LanguageUtils.shouldDisplayTitle(it.title) }
+                                rankingNotice = update.notice
+                                rankingAttribution = update.attribution
+                                rankingProgress = update.progress
+                            }
+                        }
                     }
                     handledIds = handledIds + ranked.handledIds
                     rankingNotice = ranked.notice
@@ -170,6 +208,13 @@ class MoviesViewModel : ViewModel() {
                 
                 if (!append) {
                     movies = filteredMovies
+                    showingSaved = false
+                    // Shown at once the next time the app opens
+                    if (selectedFilterType.isRanked && filteredMovies.isNotEmpty()) {
+                        val notice = rankingNotice
+                        val attribution = rankingAttribution
+                        launch { RankedListStore.saveMovies(listKey, filteredMovies, notice, attribution) }
+                    }
                 } else {
                     movies = movies + filteredMovies
                 }
@@ -195,9 +240,10 @@ class MoviesViewModel : ViewModel() {
         }
     }
     
-    // A failed first load starts over; a failed load-more tries the same pages again
+    // A failed first load (or one that was updating a saved list) starts over; a failed load-more
+    // tries the same pages again
     fun retry() {
-        if (movies.isEmpty()) refresh() else loadMovies(currentPage + 1, append = true)
+        if (movies.isEmpty() || showingSaved) refresh() else loadMovies(currentPage + 1, append = true)
     }
     
     fun refresh() {

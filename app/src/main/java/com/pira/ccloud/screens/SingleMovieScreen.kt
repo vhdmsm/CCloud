@@ -74,6 +74,10 @@ import com.pira.ccloud.utils.DownloadUtils
 import com.pira.ccloud.components.MovieScoresSection
 import com.pira.ccloud.components.rememberMovieInsight
 import com.pira.ccloud.utils.StorageUtils
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import com.pira.ccloud.components.FocusWhenReady
+import com.pira.ccloud.components.focusHighlight
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -491,14 +495,19 @@ fun MovieDetailsContent(
                 )
             }
             
+            // The remote starts on the first quality (as Netflix starts on Play)
+            val firstQualityFocus = remember { FocusRequester() }
+            FocusWhenReady(firstQualityFocus, ready = true)
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp)
             ) {
-                movie.sources.forEach { source ->
+                movie.sources.forEachIndexed { index, source ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .then(if (index == 0) Modifier.focusRequester(firstQualityFocus) else Modifier)
+                            .focusHighlight(focusedScale = 1.03f)
                             .clickable {
                                 selectedSource = source
                                 showSourceDialog = true

@@ -29,6 +29,25 @@ class SeriesRepository : BaseRepository() {
         }
     }
     
+    /**
+     * Like [getSeries], but the page may come from the list kept on the device (read again in the
+     * background when older than [maxAgeMs], see [SiteListCache]); for the ranked sorts.
+     */
+    suspend fun getSeriesCached(page: Int, genreId: Int, filterType: FilterType, maxAgeMs: Long): List<Series> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = buildUrl(BASE_URL, genreId, filterType, page)
+                val list = "series-${filterType.name.lowercase()}-$genreId"
+                val jsonData = SiteListCache.page(list, page, maxAgeMs) {
+                    executeRequest(url) { Request.Builder().url(it).build() }
+                }
+                parseSeries(jsonData)
+            } catch (e: Exception) {
+                throw Exception("Error fetching series: ${e.message}")
+            }
+        }
+    }
+    
     private fun buildUrl(baseUrl: String, genreId: Int, filterType: FilterType, page: Int): String {
         return when (filterType) {
             FilterType.DEFAULT -> "$baseUrl/$genreId/created/$page/$API_KEY"

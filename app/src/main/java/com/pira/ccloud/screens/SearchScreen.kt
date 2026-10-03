@@ -76,6 +76,7 @@ import com.pira.ccloud.data.model.Poster
 import com.pira.ccloud.ui.search.SearchViewModel
 import com.pira.ccloud.utils.DeviceUtils
 import com.pira.ccloud.utils.StorageUtils
+import com.pira.ccloud.components.focusHighlight
 
 @Composable
 fun SearchScreen(
@@ -382,6 +383,7 @@ fun PosterItem(
         modifier = Modifier
             .fillMaxWidth()
             .height(310.dp) // Fixed height for all cards
+            .focusHighlight()
             .clickable { onClick() },
         shape = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
