@@ -39,7 +39,10 @@ class SiteListCacheTest {
         assertEquals("a1", read(1, -1))
         waitFor(File(root, "series/next/complete"), root, synchronized(asked) { asked.toList() })
         assertEquals(4, asked.size)
-        // The next read from the first page takes the new snapshot
+        // Not while the app runs (the list may be being read)...
+        assertEquals("a1", read(1, 60_000))
+        // ...but the next time it opens
+        SiteListCache.useDirectory(root)
         assertEquals("b0", read(0, 60_000))
         assertEquals("b1", read(1, 60_000))
         assertEquals(4, asked.size)
