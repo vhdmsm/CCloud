@@ -1,7 +1,6 @@
 package com.pira.ccloud.data.repository
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.pira.ccloud.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -55,7 +54,8 @@ object OmdbClient {
 
     data class Details(val awards: Awards, val rating: Rating?)
 
-    private var prefs: SharedPreferences? = null
+    // Saved together a moment after they come in (see BatchedPrefs)
+    private val prefs = BatchedPrefs("omdb")
     private val memoryCache = ConcurrentHashMap<String, Details>()
     private val keyBlockedUntil = ConcurrentHashMap<String, Long>()
 
@@ -70,7 +70,7 @@ object OmdbClient {
         }
 
     fun init(context: Context) {
-        if (prefs == null) prefs = context.applicationContext.getSharedPreferences("omdb", Context.MODE_PRIVATE)
+        prefs.init(context)
     }
 
     /**
@@ -174,7 +174,7 @@ object OmdbClient {
 
     // When the answer was kept, and the answer
     private fun readCache(imdbId: String): Pair<Long, JSONObject>? {
-        val entry = prefs?.getString(imdbId, null) ?: return null
+        val entry = prefs.getString(imdbId) ?: return null
         val savedAt = entry.substringBefore('|').toLongOrNull() ?: return null
         return try {
             savedAt to JSONObject(entry.substringAfter('|'))
@@ -184,6 +184,6 @@ object OmdbClient {
     }
 
     private fun writeCache(imdbId: String, json: JSONObject) {
-        prefs?.edit()?.putString(imdbId, "${System.currentTimeMillis()}|$json")?.apply()
+        prefs.putString(imdbId, "${System.currentTimeMillis()}|$json")
     }
 }

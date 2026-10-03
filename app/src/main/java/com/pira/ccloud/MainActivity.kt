@@ -42,6 +42,7 @@ import androidx.navigation.compose.rememberNavController
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import com.pira.ccloud.data.repository.OmdbClient
 import com.pira.ccloud.data.repository.DataUsage
+import com.pira.ccloud.data.repository.SiteListCache
 import com.pira.ccloud.data.repository.WatchmodeClient
 import com.pira.ccloud.navigation.AppNavigation
 import com.pira.ccloud.navigation.AppScreens
@@ -61,6 +62,8 @@ class MainActivity : ComponentActivity() {
         OmdbClient.init(this)
         WatchmodeClient.init(this)
         DataUsage.init(this)
+        // The site's lists as read for the ranked sorts, kept for a few hours
+        SiteListCache.init(this)
         // Set default orientation to portrait for mobile/tablet
         // For TV, we don't set orientation as it's typically fixed
         if (!DeviceUtils.isTv(this)) {

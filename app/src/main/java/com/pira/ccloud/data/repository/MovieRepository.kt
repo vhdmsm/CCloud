@@ -30,6 +30,25 @@ class MovieRepository : BaseRepository() {
         }
     }
     
+    /**
+     * Like [getMovies], but the page may come from the device when the list was read less than
+     * [maxAgeMs] ago (see [SiteListCache]); for the ranked sorts, which read many pages.
+     */
+    suspend fun getMoviesCached(page: Int, genreId: Int, filterType: FilterType, maxAgeMs: Long): List<Movie> {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = buildUrl(BASE_URL, genreId, filterType, page)
+                val list = "movies-${filterType.name.lowercase()}-$genreId"
+                val jsonData = SiteListCache.page(list, page, maxAgeMs) {
+                    executeRequest(url) { Request.Builder().url(it).build() }
+                }
+                parseMovies(jsonData)
+            } catch (e: Exception) {
+                throw Exception("Error fetching movies: ${e.message}")
+            }
+        }
+    }
+    
     private fun buildUrl(baseUrl: String, genreId: Int, filterType: FilterType, page: Int): String {
         return when (filterType) {
             FilterType.DEFAULT -> "$baseUrl/$genreId/created/$page/$API_KEY"

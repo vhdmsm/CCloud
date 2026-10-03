@@ -1,7 +1,6 @@
 package com.pira.ccloud.data.repository
 
 import android.content.Context
-import android.content.SharedPreferences
 import com.pira.ccloud.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -69,7 +68,8 @@ object WatchmodeClient {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    private var prefs: SharedPreferences? = null
+    // Saved together a moment after they come in (see BatchedPrefs)
+    private val prefs = BatchedPrefs("watchmode")
     private val memoryCache = ConcurrentHashMap<String, String>()
 
     private val keyBlockedUntil = ConcurrentHashMap<String, Long>()
@@ -129,7 +129,7 @@ object WatchmodeClient {
         !keepReserve || year >= currentYear || (remainingShare ?: 1.0) >= RESERVE_SHARE
 
     fun init(context: Context) {
-        if (prefs == null) prefs = context.applicationContext.getSharedPreferences("watchmode", Context.MODE_PRIVATE)
+        prefs.init(context)
     }
 
     /**
@@ -205,11 +205,15 @@ object WatchmodeClient {
                     null
                 }
             }
-            if (!isAvailableSoon) return@withLock null
-            val pages = try {
-                coroutineScope {
-                    (1..POPULAR_SERIES_PAGES).map { page ->
-                        async {
+            if (!isAvailableSoon) {
+                log("popular series: no key usable now")
+                return@withLock null
+            }
+            // A page that fails leaves a gap (the list is used, not kept); without the first, nothing
+            val pages = coroutineScope {
+                (1..POPULAR_SERIES_PAGES).map { page ->
+                    async {
+                        try {
                             call(
                                 "/list-titles/",
                                 "types" to "tv_series,tv_miniseries",
@@ -218,26 +222,27 @@ object WatchmodeClient {
                                 "limit" to "250",
                                 "page" to page.toString()
                             ).optJSONArray("titles") ?: JSONArray()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            if (e is IOException) offlineUntil = System.currentTimeMillis() + SHORT_BACKOFF_MS
+                            log("popular series page $page failed: $e")
+                            null
                         }
-                    }.awaitAll()
-                }
-            } catch (e: IOException) {
-                offlineUntil = System.currentTimeMillis() + SHORT_BACKOFF_MS
-                return@withLock null
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                return@withLock null
+                    }
+                }.awaitAll()
             }
+            if (pages.first() == null) return@withLock null
             val titles = JSONArray()
             for (page in pages) {
+                if (page == null) continue
                 for (i in 0 until page.length()) {
                     val title = page.optJSONObject(i) ?: continue
                     titles.put(JSONArray().put(title.optString("title")).put(title.optInt("year")))
                 }
             }
             if (titles.length() == 0) return@withLock null
-            writeCache(key, titles.toString())
+            if (pages.all { it != null }) writeCache(key, titles.toString())
             SeriesPopularity(parsePopular(titles))
         }
     }
@@ -507,16 +512,24 @@ object WatchmodeClient {
         throw NoUsableKeyException()
     }
 
+    private fun log(message: String) {
+        try {
+            android.util.Log.i("CCloudWatchmode", message)
+        } catch (e: RuntimeException) {
+            // Unit tests (no Android logging)
+        }
+    }
+
     private fun blockKey(key: String, durationMs: Long) {
         keyBlockedUntil[key] = System.currentTimeMillis() + durationMs
     }
 
     private fun readCache(key: String, ttlMs: Long = CACHE_TTL_MS): String? {
-        val entry = memoryCache[key] ?: prefs?.getString(key, null) ?: return null
+        val entry = memoryCache[key] ?: prefs.getString(key) ?: return null
         val savedAt = entry.substringBefore('|').toLongOrNull() ?: return null
         if (System.currentTimeMillis() - savedAt > ttlMs) {
             memoryCache.remove(key)
-            prefs?.edit()?.remove(key)?.apply()
+            prefs.remove(key)
             return null
         }
         memoryCache[key] = entry
@@ -526,6 +539,6 @@ object WatchmodeClient {
     private fun writeCache(key: String, value: String) {
         val entry = "${System.currentTimeMillis()}|$value"
         memoryCache[key] = entry
-        prefs?.edit()?.putString(key, entry)?.apply()
+        prefs.putString(key, entry)
     }
 }

@@ -3,16 +3,21 @@ package com.pira.ccloud.data.repository
 import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.utils.LanguageUtils
+import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
@@ -82,7 +87,8 @@ class RankedMovieRepository(
      * [handledIds]: movies earlier loads of this list already dealt with (shown or skipped).
      * [onUpdate] gets the list while movie data comes in (about every second), so it never waits
      * for all of it. When two years are ranked together, this year's movies are ranked and shown
-     * first; last year's join them as their data arrives.
+     * first; last year's join them as their data arrives. Runs off the main thread ([onUpdate] is
+     * called from a worker thread too).
      */
     suspend fun getRankedMovies(
         page: Int,
@@ -90,6 +96,19 @@ class RankedMovieRepository(
         filterType: FilterType,
         handledIds: Set<Int>,
         onUpdate: (RankedPage) -> Unit = {}
+    ): RankedPage = withContext(Dispatchers.Default) {
+        val startedAt = System.currentTimeMillis()
+        rankedMovies(page, genreId, filterType, handledIds, onUpdate).also {
+            log("${filterType.name} page $page: ${it.movies.size} ranked in ${System.currentTimeMillis() - startedAt} ms")
+        }
+    }
+
+    private suspend fun rankedMovies(
+        page: Int,
+        genreId: Int,
+        filterType: FilterType,
+        handledIds: Set<Int>,
+        onUpdate: (RankedPage) -> Unit
     ): RankedPage {
         val seen = handledIds.toMutableSet()
         // Movies of the years (or pages) already ranked
@@ -100,7 +119,9 @@ class RankedMovieRepository(
             rankedPage(facts, filterType, lastPage, hasMore, seen.toSet(), progress)
 
         if (ranksSeriesAcrossYears(filterType)) {
-            val (batch, more) = nextSeriesBatch(genreId, filterType, seen) { progress -> onUpdate(result(emptyList(), progress)) }
+            val (batch, more) = seriesBatchLock.withLock {
+                nextSeriesBatch(genreId, filterType, seen) { progress -> onUpdate(result(emptyList(), progress)) }
+            }
             hasMore = more
             val year = Calendar.getInstance().get(Calendar.YEAR)
             ranked += rankGroup(batch, filterType, emptyList(), year = null, priority = { seriesPreScore(it, year) }) { facts, progress ->
@@ -209,8 +230,25 @@ class RankedMovieRepository(
     @Volatile
     private var popularSeries: SeriesPopularity? = null
 
-    private fun seriesPreScore(movie: Movie, currentYear: Int): Double =
-        MovieRanking.seriesPreScore(movie, currentYear, popularSeries?.let { it.score(movie.title, movie.year) ?: 0.0 })
+    // One series list is read at a time (a new one waits for a cancelled one to stop)
+    private val seriesBatchLock = Mutex()
+
+    // Each series' pre-score, worked out once (the list is sorted by it often, and matching the
+    // popular list's titles takes a while); cleared when the popular list or the year changes
+    private val preScores = ConcurrentHashMap<Int, Double>()
+    @Volatile
+    private var preScoresFor: Pair<SeriesPopularity?, Int>? = null
+
+    private fun seriesPreScore(movie: Movie, currentYear: Int): Double {
+        val key = popularSeries to currentYear
+        if (preScoresFor != key) {
+            preScores.clear()
+            preScoresFor = key
+        }
+        return preScores.getOrPut(movie.id) {
+            MovieRanking.seriesPreScore(movie, currentYear, key.first?.let { it.score(movie.title, movie.year) ?: 0.0 })
+        }
+    }
 
     /**
      * The next series to rank: the [SERIES_BATCH_SIZE] likeliest best by the site's data (IMDb score
@@ -229,14 +267,19 @@ class RankedMovieRepository(
             ?: SeriesPool(genreId).also { seriesPool = it }
         if (popularSeries == null) {
             onProgress("Reading the most popular series…")
+            val startedAt = System.currentTimeMillis()
             popularSeries = try {
                 seriesPopularity()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                log("popular series list failed: $e")
                 null
             }
+            log("popular series list: ${popularSeries?.size ?: "unavailable"} in ${System.currentTimeMillis() - startedAt} ms")
         }
+        val readStartedAt = System.currentTimeMillis()
+        val pagesBefore = pool.nextPage
         val limit = minYear()
         fun unseen() = pool.series.filter { it.id !in seen }
         while (!pool.exhausted && pool.nextPage < MAX_SERIES_PAGES) {
@@ -247,7 +290,7 @@ class RankedMovieRepository(
             onProgress("Reading the series list: ${pool.series.size} series…")
             val first = pool.nextPage
             val pages = coroutineScope {
-                (first until first + SERIES_PAGES_PER_READ).map { async { fetchPage(it, genreId, FilterType.BY_YEAR) } }.awaitAll()
+                (first until first + SERIES_PAGES_PER_READ).map { async { fetchWithRetry(it, genreId, FilterType.BY_YEAR) } }.awaitAll()
             }
             pool.nextPage = first + SERIES_PAGES_PER_READ
             for (page in pages) {
@@ -269,6 +312,9 @@ class RankedMovieRepository(
                     }
                 }
             }
+        }
+        if (pool.nextPage > pagesBefore) {
+            log("series list: pages $pagesBefore-${pool.nextPage - 1} read, ${pool.series.size} series, in ${System.currentTimeMillis() - readStartedAt} ms")
         }
         val batch = unseen().sortedByDescending { seriesPreScore(it, year) }.take(SERIES_BATCH_SIZE)
         batch.forEach { seen += it.id }
@@ -364,18 +410,20 @@ class RankedMovieRepository(
             batch.isNotEmpty() && batch.none { it.info?.castPopularity != null }
         val omdbMissing = !loading && filterType.needsOmdb && !OmdbClient.isAvailable && batch.any { it.awards == null }
         val year = Calendar.getInstance().get(Calendar.YEAR)
-        val byScore = compareByDescending<MovieFacts> {
-            when {
-                // Series weigh the start year in, with or without data
-                ranksSeriesAcrossYears(filterType) && dataMissing -> seriesPreScore(it.movie, year)
-                ranksSeriesAcrossYears(filterType) -> MovieRanking.seriesBestOverallScore(it, year)
-                dataMissing || castMissing -> it.imdb
-                else -> MovieRanking.score(filterType, it, year)
-            }
+        fun scoreOf(facts: MovieFacts): Double = when {
+            // Series weigh the start year in, with or without data
+            ranksSeriesAcrossYears(filterType) && dataMissing -> seriesPreScore(facts.movie, year)
+            ranksSeriesAcrossYears(filterType) -> MovieRanking.seriesBestOverallScore(facts, year)
+            dataMissing || castMissing -> facts.imdb
+            else -> MovieRanking.score(filterType, facts, year)
         }
+        // Each score worked out once, not at every comparison (this runs every second while loading)
+        val scored = batch.map { it to scoreOf(it) }
+        val byScore = compareByDescending<Pair<MovieFacts, Double>> { it.second }
         // Ties go to the better IMDB score (so movies still waiting for data keep the IMDB order);
         // for Newest the server's order (newest added first) stays
-        val ranked = batch.sortedWith(if (filterType == FilterType.NEWEST) byScore else byScore.thenByDescending { it.imdb })
+        val ranked = scored.sortedWith(if (filterType == FilterType.NEWEST) byScore else byScore.thenByDescending { it.first.imdb })
+            .map { it.first }
         val notice = when {
             dataMissing -> "Movie data from Watchmode isn't available right now (monthly limit or no connection), showing movies by IMDB score"
             castMissing -> "Actor data isn't available right now, showing movies by IMDB score"
@@ -403,14 +451,30 @@ class RankedMovieRepository(
 
     private suspend fun readServerPage(page: Int, genreId: Int, filterType: FilterType): List<Movie> =
         if (readsNewestFirst(filterType)) {
-            fetchPage(page, genreId, FilterType.BY_YEAR)
+            fetchWithRetry(page, genreId, FilterType.BY_YEAR)
         } else {
             coroutineScope {
-                val byImdb = async { fetchPage(page, genreId, FilterType.BY_IMDB) }
-                val byYear = async { fetchPage(page, genreId, FilterType.BY_YEAR) }
+                val byImdb = async { fetchWithRetry(page, genreId, FilterType.BY_IMDB) }
+                val byYear = async { fetchWithRetry(page, genreId, FilterType.BY_YEAR) }
                 byImdb.await() + byYear.await()
             }
         }
+
+    // Many pages are read at once and the site sometimes drops one: it's asked for again a couple
+    // of times before the load fails
+    private suspend fun fetchWithRetry(page: Int, genreId: Int, filterType: FilterType): List<Movie> {
+        repeat(PAGE_RETRIES) { attempt ->
+            try {
+                return fetchPage(page, genreId, filterType)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("page $page failed (try ${attempt + 1}): ${e.message}")
+                delay(PAGE_RETRY_DELAY_MS * (attempt + 1))
+            }
+        }
+        return fetchPage(page, genreId, filterType)
+    }
 
     private suspend fun facts(movie: Movie, filterType: FilterType, cachedOnly: Boolean): MovieFacts? {
         val custom = lookUpFacts ?: return lookUp(movie, filterType, cachedOnly)
@@ -457,7 +521,16 @@ class RankedMovieRepository(
         )
     }
 
+    private fun log(message: String) {
+        try {
+            Log.i(LOG_TAG, message)
+        } catch (e: RuntimeException) {
+            // Unit tests (no Android logging)
+        }
+    }
+
     private companion object {
+        const val LOG_TAG = "CCloudRanking"
         const val MIN_BATCH_SIZE = 12
         const val MAX_PAGES_PER_LOAD = 3
         // A year with more pages than this (about 700 movies) is ranked in parts (a limit on the
@@ -465,11 +538,14 @@ class RankedMovieRepository(
         const val MAX_PAGES_PER_YEAR = 30
         const val MAX_YEARS_PER_LOAD = 3
         const val UPDATE_INTERVAL_MS = 1_000L
-        const val PAGES_READ_AHEAD = 3
+        // The site answers in 1.5 to 2 s a page whatever the number asked for at once
+        const val PAGES_READ_AHEAD = 6
+        const val PAGE_RETRIES = 2
+        const val PAGE_RETRY_DELAY_MS = 1_000L
         // Series Best Overall: series that get data in one load, server pages read at a time, and
         // the pages read at most (about 12,000 series)
         const val SERIES_BATCH_SIZE = 300
-        const val SERIES_PAGES_PER_READ = 8
+        const val SERIES_PAGES_PER_READ = 24
         const val MAX_SERIES_PAGES = 400
     }
 }

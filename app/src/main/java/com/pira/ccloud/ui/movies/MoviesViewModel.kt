@@ -19,8 +19,20 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 class MoviesViewModel : ViewModel() {
+    companion object {
+        // How long the site's newest-first list read for the ranked sorts is kept on the device
+        private const val SITE_LIST_MAX_AGE_MS = 3L * 60 * 60 * 1000
+    }
+
     private val repository = MovieRepository()
-    private val rankedRepository = RankedMovieRepository(repository::getMovies)
+    // The ranked sorts read the newest-first list (many pages), kept on the device for a few hours
+    private val rankedRepository = RankedMovieRepository({ page, genreId, filterType ->
+        if (filterType == FilterType.BY_YEAR) {
+            repository.getMoviesCached(page, genreId, filterType, SITE_LIST_MAX_AGE_MS)
+        } else {
+            repository.getMovies(page, genreId, filterType)
+        }
+    })
     private val genreRepository = GenreRepository()
     
     var movies by mutableStateOf<List<Movie>>(emptyList())
@@ -132,11 +144,15 @@ class MoviesViewModel : ViewModel() {
                     // Earlier batches stay above the one loading; a first page replaces the list
                     val shownBefore = if (append) movies else emptyList()
                     val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, handledIds) { update ->
-                        // The batch shows as soon as the server's list is read and is re-ranked as data comes in
-                        movies = shownBefore + update.movies.filter { LanguageUtils.shouldDisplayTitle(it.title) }
-                        rankingNotice = update.notice
-                        rankingAttribution = update.attribution
-                        rankingProgress = update.progress
+                        // The batch shows as soon as the server's list is read and is re-ranked as data
+                        // comes in. Ranking runs off the main thread; the list is updated on it (in order,
+                        // and not after this load is cancelled)
+                        launch {
+                            movies = shownBefore + update.movies.filter { LanguageUtils.shouldDisplayTitle(it.title) }
+                            rankingNotice = update.notice
+                            rankingAttribution = update.attribution
+                            rankingProgress = update.progress
+                        }
                     }
                     handledIds = handledIds + ranked.handledIds
                     rankingNotice = ranked.notice

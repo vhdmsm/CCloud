@@ -29,6 +29,8 @@ class SeriesViewModel : ViewModel() {
         private val ALL_YEARS_GENRE_IDS = setOf(26, 32)
         // Pages fetched at most in one load when the filters leave pages empty
         private const val MAX_PAGES_PER_LOAD = 5
+        // How long the site's newest-first list read for the ranked sorts is kept on the device
+        private const val SITE_LIST_MAX_AGE_MS = 6L * 60 * 60 * 1000
     }
     
     private val repository = SeriesRepository()
@@ -38,7 +40,14 @@ class SeriesViewModel : ViewModel() {
     private val seriesById = ConcurrentHashMap<Int, Series>()
     private val rankedRepository = RankedMovieRepository(
         fetchPage = { page, genreId, filterType ->
-            repository.getSeries(page, genreId, filterType).map { seriesItem ->
+            // The ranked sorts read the whole newest-first list (about 200 pages), kept on the device
+            // for a few hours
+            val pageSeries = if (filterType == FilterType.BY_YEAR) {
+                repository.getSeriesCached(page, genreId, filterType, SITE_LIST_MAX_AGE_MS)
+            } else {
+                repository.getSeries(page, genreId, filterType)
+            }
+            pageSeries.map { seriesItem ->
                 seriesById[seriesItem.id] = seriesItem
                 seriesItem.toMovie()
             }
@@ -158,11 +167,15 @@ class SeriesViewModel : ViewModel() {
                     // Earlier batches stay above the one loading; a first page replaces the list
                     val shownBefore = if (append) series else emptyList()
                     val ranked = rankedRepository.getRankedMovies(page, selectedGenreId, selectedFilterType, handledIds) { update ->
-                        // The batch shows as soon as the server's list is read and is re-ranked as data comes in
-                        series = shownBefore + update.movies.mapNotNull { it.toSeries() }.filter { isShown(it) }
-                        rankingNotice = update.notice
-                        rankingAttribution = update.attribution
-                        rankingProgress = update.progress
+                        // The batch shows as soon as the server's list is read and is re-ranked as data
+                        // comes in. Ranking runs off the main thread; the list is updated on it (in order,
+                        // and not after this load is cancelled)
+                        launch {
+                            series = shownBefore + update.movies.mapNotNull { it.toSeries() }.filter { isShown(it) }
+                            rankingNotice = update.notice
+                            rankingAttribution = update.attribution
+                            rankingProgress = update.progress
+                        }
                     }
                     handledIds = handledIds + ranked.handledIds
                     rankingNotice = ranked.notice
