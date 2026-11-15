@@ -65,11 +65,11 @@ android {
             "\"${secretsProperties.getProperty("METADATA_SNAPSHOT_REPO", "vhdmsm/CCloud")}\""
         )
         // Public client id of the GitHub App the publisher signs in with on the TV (a code approved on
-        // the phone); not a secret. Empty: only a pasted token can upload
+        // the phone); not a secret (the default is the "CCloud data" app of vhdmsm/CCloud)
         buildConfigField(
             "String",
             "METADATA_SNAPSHOT_CLIENT_ID",
-            "\"${secretsProperties.getProperty("METADATA_SNAPSHOT_CLIENT_ID", "")}\""
+            "\"${secretsProperties.getProperty("METADATA_SNAPSHOT_CLIENT_ID", "Iv23lictCUbPndy7WV8N")}\""
         )
         
         // Add memory management options
