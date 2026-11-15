@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material3.Icon
@@ -64,12 +66,15 @@ fun SidebarNavigation(navController: NavController) {
             Spacer(modifier = Modifier.height(16.dp))
         }
     ) {
+        // Scrolls when the sections don't all fit the screen's height (the remote scrolls it along)
         Column(
-            modifier = Modifier.fillMaxHeight(),
+            modifier = Modifier
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Column(
-                verticalArrangement = Arrangement.spacedBy(28.dp) // Increased spacing between items
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 AppScreens.screens.filter { it.showSidebar }.forEach { screen ->
                     val isSelected = currentRoute == screen.route

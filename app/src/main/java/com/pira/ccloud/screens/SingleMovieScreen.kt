@@ -64,6 +64,9 @@ import coil.request.ImageRequest
 import com.pira.ccloud.VideoPlayerActivity
 import com.pira.ccloud.formatTime
 import com.pira.ccloud.utils.PlaybackPositions
+import com.pira.ccloud.utils.WatchHistory
+import com.pira.ccloud.utils.toWatchItem
+import com.pira.ccloud.components.WatchStatusButton
 import com.pira.ccloud.utils.rememberPlaybackPosition
 import com.pira.ccloud.components.DownloadOptionsDialog
 import com.pira.ccloud.components.ExpandableText
@@ -102,6 +105,8 @@ fun SingleMovieScreen(
                 // A trailer is a separate short video: keep its position apart from the movie's
                 val isTrailer = source.url.contains("/tizer/", ignoreCase = true) ||
                     source.quality.contains("تیزر")
+                // Playing the movie puts it under Watching; finishing it moves it to Seen
+                if (!isTrailer) WatchHistory.markWatching(context, movie!!.toWatchItem())
                 VideoPlayerActivity.start(context, source.url, if (isTrailer) null else movie!!.id)
             },
             // Remove any padding from parent Scaffold to use full screen
@@ -474,6 +479,12 @@ fun MovieDetailsContent(
         
         // Awards and the ranking criteria
         MovieScoresSection(movie = movie, insight = insight)
+        
+        // Watching / Seen
+        WatchStatusButton(
+            item = remember(movie) { movie.toWatchItem() },
+            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
+        )
         
         // Sources/Quality options
         if (movie.sources.isNotEmpty()) {

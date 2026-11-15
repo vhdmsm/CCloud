@@ -5,9 +5,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Movie
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.pira.ccloud.R
 
@@ -71,6 +73,23 @@ sealed class AppScreens(
         showSidebar = true
     )
 
+    // Movies and series being watched / already seen (the TV sidebar only: the phone's bottom bar is full)
+    data object Watching : AppScreens(
+        route = "watching",
+        resourceId = R.string.watching,
+        icon = Icons.Default.PlayCircle,
+        showBottomBar = false,
+        showSidebar = true
+    )
+
+    data object Seen : AppScreens(
+        route = "seen",
+        resourceId = R.string.seen,
+        icon = Icons.Default.Visibility,
+        showBottomBar = false,
+        showSidebar = true
+    )
+
     data object About : AppScreens(
         route = "about",
         resourceId = R.string.about,
@@ -87,6 +106,6 @@ sealed class AppScreens(
     )
 
     companion object {
-        val screens = listOf(Movies, Series, Search, Favorites, Settings)
+        val screens = listOf(Movies, Series, Search, Favorites, Watching, Seen, Settings)
     }
 }

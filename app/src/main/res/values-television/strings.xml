@@ -6,6 +6,8 @@
     <string name="search">Search</string>
     <string name="settings">Settings</string>
     <string name="favorites">Favorites</string>
+    <string name="watching">Watching</string>
+    <string name="seen">Seen</string>
     <string name="about">About</string>
     <string name="movie_details">Movie Details</string>
     <string name="series_details">Series Details</string>

@@ -130,6 +130,7 @@ import com.pira.ccloud.data.model.VideoPlayerSettings
 import com.pira.ccloud.data.model.FontSettings
 import com.pira.ccloud.data.model.WatchedEpisode
 import com.pira.ccloud.utils.PlaybackPositions
+import com.pira.ccloud.utils.WatchHistory
 import com.pira.ccloud.utils.StorageUtils
 import com.pira.ccloud.ui.theme.FontManager
 import kotlinx.coroutines.CoroutineScope
@@ -1066,6 +1067,8 @@ fun VideoPlayerScreen(
             val playerDuration = player.duration
             if (playerDuration <= 0 || playerDuration == C.TIME_UNSET) return
             PlaybackPositions.save(context, playbackKey, player.currentPosition, playerDuration)
+            // Watched to the end: the movie (or the series, after its last episode) moves to Seen
+            WatchHistory.onPlaybackProgress(context, playbackKey, player.currentPosition, playerDuration)
         } catch (e: Exception) {
             // Ignore storage errors
         }

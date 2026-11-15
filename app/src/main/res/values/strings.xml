@@ -9,5 +9,7 @@
     <string name="series_details">Series Details</string>
     <string name="video_player">Video Player</string>
     <string name="favorites">Favorites</string>
+    <string name="watching">Watching</string>
+    <string name="seen">Seen</string>
     <string name="country">Country</string>
 </resources>
