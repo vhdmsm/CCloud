@@ -40,6 +40,16 @@ class BatchedPrefs(private val name: String) {
         scheduleSave()
     }
 
+    /** Every kept value, unsaved writes included (for the shared data snapshot). */
+    fun entries(): Map<String, String> {
+        val all = HashMap<String, String>()
+        prefs?.all?.forEach { (key, value) -> if (value is String) all[key] = value }
+        for ((key, value) in pending) {
+            if (value.isPresent) all[key] = value.get() else all.remove(key)
+        }
+        return all
+    }
+
     private fun scheduleSave() {
         if (prefs != null && scheduled.compareAndSet(false, true)) {
             saver.schedule({ save() }, SAVE_DELAY_MS, TimeUnit.MILLISECONDS)

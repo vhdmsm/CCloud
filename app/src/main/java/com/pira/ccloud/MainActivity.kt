@@ -42,6 +42,7 @@ import androidx.navigation.compose.rememberNavController
 import com.google.accompanist.systemuicontroller.rememberSystemUiController
 import com.pira.ccloud.data.repository.OmdbClient
 import com.pira.ccloud.data.repository.DataUsage
+import com.pira.ccloud.data.repository.MetadataSnapshot
 import com.pira.ccloud.data.repository.RankedListStore
 import com.pira.ccloud.data.repository.SiteListCache
 import com.pira.ccloud.data.repository.WatchmodeClient
@@ -67,6 +68,8 @@ class MainActivity : ComponentActivity() {
         SiteListCache.init(this)
         // Each ranked list as last shown, to show at once when the app opens
         RankedListStore.init(this)
+        // The shared copy of the Watchmode/OMDb answers: taken when newer, and uploaded from the publisher's device
+        MetadataSnapshot.syncInBackground(this)
         // Set default orientation to portrait for mobile/tablet
         // For TV, we don't set orientation as it's typically fixed
         if (!DeviceUtils.isTv(this)) {
@@ -81,6 +84,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             MainApp()
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // On the publisher's device, share what was fetched while the app was open
+        MetadataSnapshot.publishInBackground(this)
     }
 }
 

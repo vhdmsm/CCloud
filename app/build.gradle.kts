@@ -57,6 +57,13 @@ android {
         // Watchmode API keys for popularity, actors and release dates, requests spread over all of them;
         // none hides the sorts that need them
         buildConfigField("String", "WATCHMODE_API_KEYS", "\"${allKeys("WATCHMODE_API_KEY")}\"")
+        // GitHub repository ("owner/name") whose "metadata-snapshot" release holds the shared movie data
+        // every device downloads; empty turns the sharing off. Only its public link is built in, never a token
+        buildConfigField(
+            "String",
+            "METADATA_SNAPSHOT_REPO",
+            "\"${secretsProperties.getProperty("METADATA_SNAPSHOT_REPO", "vhdmsm/CCloud")}\""
+        )
         
         // Add memory management options
         multiDexEnabled = true

@@ -125,6 +125,17 @@ object OmdbClient {
         stale
     }
 
+    /** Every kept answer, as saved ("time|json" by IMDb id), for the shared data snapshot. */
+    fun snapshotEntries(): Map<String, String> = prefs.entries()
+
+    /** Takes answers from the shared data snapshot (only those newer than the device's, see MetadataSnapshot). */
+    fun importEntries(entries: Map<String, String>) {
+        for ((imdbId, entry) in entries) {
+            prefs.putString(imdbId, entry)
+            memoryCache.remove(imdbId)
+        }
+    }
+
     private fun parseDetails(json: JSONObject): Details =
         parseDetails(json.optString("Awards", "N/A"), json.optString("imdbRating"), json.optString("imdbVotes"))
 

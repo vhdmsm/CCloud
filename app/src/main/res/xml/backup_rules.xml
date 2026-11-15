@@ -6,6 +6,8 @@
    See https://developer.android.com/about/versions/12/backup-restore
 -->
 <full-backup-content>
+    <!-- The shared movie data settings hold the publisher's GitHub token: kept on the device only -->
+    <exclude domain="sharedpref" path="metadata_snapshot.xml"/>
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>
