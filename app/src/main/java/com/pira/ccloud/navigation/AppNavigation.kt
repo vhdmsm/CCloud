@@ -18,6 +18,8 @@ import com.pira.ccloud.screens.SingleSeriesScreen
 import com.pira.ccloud.screens.SplashScreen
 import com.pira.ccloud.screens.FavoritesScreen
 import com.pira.ccloud.screens.CountryScreen
+import com.pira.ccloud.screens.WatchListScreen
+import com.pira.ccloud.data.model.WatchStatus
 import com.pira.ccloud.ui.movies.MoviesViewModel
 import com.pira.ccloud.ui.search.SearchViewModel
 import com.pira.ccloud.ui.series.SeriesViewModel
@@ -90,6 +92,12 @@ fun AppNavigation(
         }
         composable(route = AppScreens.Favorites.route) {
             FavoritesScreen(navController)
+        }
+        composable(route = AppScreens.Watching.route) {
+            WatchListScreen(status = WatchStatus.WATCHING, navController = navController)
+        }
+        composable(route = AppScreens.Seen.route) {
+            WatchListScreen(status = WatchStatus.SEEN, navController = navController)
         }
         composable(route = AppScreens.About.route) {
             AboutScreen(navController)

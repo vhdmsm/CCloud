@@ -76,6 +76,9 @@ import com.pira.ccloud.data.model.Source
 import com.pira.ccloud.data.model.WatchedEpisode
 import com.pira.ccloud.formatTime
 import com.pira.ccloud.utils.PlaybackPositions
+import com.pira.ccloud.utils.WatchHistory
+import com.pira.ccloud.utils.toWatchItem
+import com.pira.ccloud.components.WatchStatusButton
 import com.pira.ccloud.utils.rememberPlaybackPosition
 import androidx.compose.material.icons.filled.Check
 import com.pira.ccloud.ui.series.SeasonsViewModel
@@ -109,9 +112,24 @@ fun SingleSeriesScreen(
         seasonsViewModel.loadSeasons(seriesId)
     }
     
+    // The season an episode is in, so the player and the watched marks get the right season
+    // when another season than the first is open
+    fun seasonOf(episode: Episode) =
+        seasonsViewModel.seasons.firstOrNull { season -> season.episodes.any { it.id == episode.id } }
+            ?: seasonsViewModel.seasons[selectedSeasonIndex]
+
+    // Playing an episode puts the series under Watching; finishing its last episode moves it to Seen
+    fun markWatching() {
+        val lastSeason = seasonsViewModel.seasons.lastOrNull { it.episodes.isNotEmpty() }
+        val finalEpisodeKey = lastSeason?.episodes?.lastOrNull()?.let {
+            PlaybackPositions.episodeKey(seriesId, lastSeason.id, it.id)
+        }
+        series?.let { WatchHistory.markWatching(context, it.toWatchItem(), finalEpisodeKey) }
+    }
+
     // Source selection dialog
     if (showSourceDialog && selectedEpisode != null && series != null) {
-        val selectedSeason = seasonsViewModel.seasons[selectedSeasonIndex]
+        val selectedSeason = seasonOf(selectedEpisode!!)
         SourceOptionsDialog(
             episode = selectedEpisode!!,
             series = series!!,
@@ -123,6 +141,7 @@ fun SingleSeriesScreen(
             },
             onPlay = { source ->
                 showSourceDialog = false
+                markWatching()
                 // Launch video player activity with the selected source URL and episode info
                 VideoPlayerActivity.startWithEpisodeInfo(
                     context,
@@ -155,13 +174,14 @@ fun SingleSeriesScreen(
             onBackClick = { navController.popBackStack() },
             onEpisodeClick = { episode ->
                 if (episode.sources.isNotEmpty() && series != null) {
-                    val selectedSeason = seasonsViewModel.seasons[selectedSeasonIndex]
+                    val selectedSeason = seasonOf(episode)
                     if (episode.sources.size > 1) {
                         // Show source selection dialog if there are multiple sources
                         selectedEpisode = episode
                         showSourceDialog = true
                     } else {
                         // Directly play if there's only one source
+                        markWatching()
                         VideoPlayerActivity.startWithEpisodeInfo(
                             context, 
                             episode.sources[0].url,
@@ -744,6 +764,11 @@ fun SeriesDetailsContent(
                 insight = insight,
                 modifier = Modifier.padding(top = 16.dp),
                 series = true
+            )
+            // In the same list item, so the seasons row keeps its index
+            WatchStatusButton(
+                item = remember(series) { series.toWatchItem() },
+                modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp)
             )
         }
         
