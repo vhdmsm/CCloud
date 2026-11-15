@@ -65,7 +65,7 @@ android {
             "\"${secretsProperties.getProperty("METADATA_SNAPSHOT_REPO", "vhdmsm/CCloud")}\""
         )
         // Public client id of the GitHub App the publisher signs in with on the TV (a code approved on
-        // the phone); not a secret (the default is the "CCloud data" app of vhdmsm/CCloud)
+        // the phone); not a secret (the default is the app set up for vhdmsm/CCloud)
         buildConfigField(
             "String",
             "METADATA_SNAPSHOT_CLIENT_ID",
