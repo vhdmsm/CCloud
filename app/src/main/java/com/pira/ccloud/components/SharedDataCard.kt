@@ -32,12 +32,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.pira.ccloud.data.repository.GitHubDeviceLogin
 import com.pira.ccloud.data.repository.MetadataSnapshot
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
  * Settings card for the shared movie data: when this device last took the shared snapshot, and,
- * for the publisher, the GitHub token (kept on this device only) that uploads it.
+ * for the publisher, signing in to GitHub (a code approved on the phone, or a pasted token; kept on
+ * this device only) so it uploads its data.
  */
 @Composable
 fun SharedDataCard() {
@@ -50,6 +54,9 @@ fun SharedDataCard() {
     var showTokenField by remember { mutableStateOf(false) }
     var token by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var signInCode by remember { mutableStateOf<GitHubDeviceLogin.Code?>(null) }
+    var signInJob by remember { mutableStateOf<Job?>(null) }
+    var signInError by remember { mutableStateOf<String?>(null) }
 
     fun ago(time: Long) = if (time <= 0) "never" else DateUtils.getRelativeTimeSpanString(time).toString()
 
@@ -103,14 +110,82 @@ fun SharedDataCard() {
                     },
                     modifier = Modifier.focusHighlight()
                 ) { Text("Download now") }
-                if (!hasToken) {
-                    TextButton(onClick = { showTokenField = !showTokenField }, modifier = Modifier.focusHighlight()) {
-                        Text("I share the data")
-                    }
+                if (!hasToken && signInCode == null) {
+                    TextButton(
+                        onClick = {
+                            if (!GitHubDeviceLogin.isConfigured) {
+                                showTokenField = !showTokenField
+                                return@TextButton
+                            }
+                            signInError = null
+                            signInJob = scope.launch {
+                                try {
+                                    val code = GitHubDeviceLogin.start()
+                                    signInCode = code
+                                    val tokens = GitHubDeviceLogin.awaitTokens(code)
+                                    MetadataSnapshot.setToken(context, tokens.accessToken, tokens.refreshToken, tokens.expiresAt)
+                                    hasToken = true
+                                    Toast.makeText(context, "Signed in: this device now shares its data", Toast.LENGTH_SHORT).show()
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    signInError = e.message ?: "Sign-in failed"
+                                } finally {
+                                    signInCode = null
+                                }
+                            }
+                        },
+                        modifier = Modifier.focusHighlight()
+                    ) { Text("I share the data") }
                 }
             }
 
-            // The publisher's part: a GitHub token with write access to the repository, on this device only
+            // Signing in on the phone: the TV shows the code to enter at github.com/login/device
+            signInCode?.let { code ->
+                Text(
+                    text = "On your phone, open ${code.verificationUri.removePrefix("https://")} and enter this code:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Text(
+                    text = code.userCode,
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+                Text(
+                    text = "Then approve CCloud. This page continues by itself.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    TextButton(
+                        onClick = {
+                            signInJob?.cancel()
+                            signInCode = null
+                        },
+                        modifier = Modifier.focusHighlight()
+                    ) { Text("Cancel") }
+                    TextButton(
+                        onClick = {
+                            signInJob?.cancel()
+                            signInCode = null
+                            showTokenField = true
+                        },
+                        modifier = Modifier.focusHighlight()
+                    ) { Text("Paste a token instead") }
+                }
+            }
+            signInError?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+
+            // Or a GitHub token typed in (e.g. on a phone), with write access to the repository
             if (showTokenField && !hasToken) {
                 Text(
                     text = "A GitHub token that can write to ${MetadataSnapshot.repo} (a fine-grained token for that " +
@@ -186,7 +261,7 @@ fun SharedDataCard() {
                             hasToken = false
                         },
                         modifier = Modifier.focusHighlight()
-                    ) { Text("Remove token") }
+                    ) { Text("Sign out") }
                 }
             }
         }

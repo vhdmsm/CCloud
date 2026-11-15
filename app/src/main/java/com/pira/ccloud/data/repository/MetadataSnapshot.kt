@@ -35,8 +35,9 @@ import java.util.zip.GZIPOutputStream
  * A shared copy of the Watchmode and OMDb answers kept on the publisher's device, so other devices
  * can rank movies and series without spending the limited API credits.
  *
- * The publisher (whoever has write access to [repo]) uploads it, from Settings with a GitHub token
- * kept only on their device, as a file of a GitHub release ([TAG]). Every device downloads it from
+ * The publisher (whoever has write access to [repo]) uploads it as a file of a GitHub release
+ * ([TAG]), after signing in once in Settings (a code approved on the phone, see GitHubDeviceLogin,
+ * or a pasted token); the token is kept only on their device. Every device downloads it from
  * the release's public link, with no key or sign-in, at most every few hours, and keeps the answers
  * that are newer than its own. The answers keep the time they were fetched, so they expire on every
  * device just as they do on the publisher's.
@@ -51,6 +52,8 @@ object MetadataSnapshot {
     private const val KEY_SNAPSHOT_TIME = "snapshot_time"
     private const val KEY_IMPORTED = "imported"
     private const val KEY_TOKEN = "github_token"
+    private const val KEY_REFRESH_TOKEN = "github_refresh_token"
+    private const val KEY_TOKEN_EXPIRES = "github_token_expires"
     private const val KEY_LAST_PUBLISH = "last_publish"
     private const val KEY_AUTO_PUBLISH = "auto_publish"
     private const val CHECK_INTERVAL_MS = 6L * 60 * 60 * 1000
@@ -164,9 +167,33 @@ object MetadataSnapshot {
     val lastPublish: Long get() = prefs?.getLong(KEY_LAST_PUBLISH, 0L) ?: 0L
     val autoPublish: Boolean get() = prefs?.getBoolean(KEY_AUTO_PUBLISH, true) ?: true
 
-    fun setToken(context: Context, token: String?) {
+    /** Keeps a token typed in, or one from signing in on the phone ([refreshToken], [expiresAt] when it expires). */
+    fun setToken(context: Context, token: String?, refreshToken: String? = null, expiresAt: Long? = null) {
         init(context)
-        prefs?.edit()?.apply { if (token.isNullOrBlank()) remove(KEY_TOKEN) else putString(KEY_TOKEN, token.trim()) }?.apply()
+        val editor = prefs?.edit() ?: return
+        if (token.isNullOrBlank()) {
+            editor.remove(KEY_TOKEN)
+        } else {
+            editor.putString(KEY_TOKEN, token.trim())
+        }
+        if (refreshToken.isNullOrBlank()) editor.remove(KEY_REFRESH_TOKEN) else editor.putString(KEY_REFRESH_TOKEN, refreshToken)
+        if (expiresAt == null) editor.remove(KEY_TOKEN_EXPIRES) else editor.putLong(KEY_TOKEN_EXPIRES, expiresAt)
+        editor.apply()
+    }
+
+    // The token to upload with, renewed first when it expired (or is about to)
+    private suspend fun currentToken(p: SharedPreferences): String? {
+        val token = p.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() } ?: return null
+        val expiresAt = p.getLong(KEY_TOKEN_EXPIRES, 0L)
+        if (expiresAt == 0L || System.currentTimeMillis() < expiresAt - 5 * 60 * 1000) return token
+        val refresh = p.getString(KEY_REFRESH_TOKEN, null) ?: return token
+        val renewed = GitHubDeviceLogin.refresh(refresh) ?: return token
+        p.edit()
+            .putString(KEY_TOKEN, renewed.accessToken)
+            .apply { if (renewed.refreshToken != null) putString(KEY_REFRESH_TOKEN, renewed.refreshToken) else remove(KEY_REFRESH_TOKEN) }
+            .apply { if (renewed.expiresAt != null) putLong(KEY_TOKEN_EXPIRES, renewed.expiresAt) else remove(KEY_TOKEN_EXPIRES) }
+            .apply()
+        return renewed.accessToken
     }
 
     fun setAutoPublish(context: Context, enabled: Boolean) {
@@ -178,8 +205,8 @@ object MetadataSnapshot {
     suspend fun publish(): Result<Int> = withContext(Dispatchers.IO) {
         lock.withLock {
             val p = prefs ?: return@withLock Result.failure(IllegalStateException("not set up"))
-            val token = p.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
-                ?: return@withLock Result.failure(IllegalStateException("No GitHub token set"))
+            val token = currentToken(p)
+                ?: return@withLock Result.failure(IllegalStateException("Not signed in to GitHub"))
             try {
                 val now = System.currentTimeMillis()
                 val omdb = SnapshotRules.exportable(OmdbClient.snapshotEntries(), now)
