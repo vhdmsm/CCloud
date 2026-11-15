@@ -524,6 +524,17 @@ object WatchmodeClient {
         keyBlockedUntil[key] = System.currentTimeMillis() + durationMs
     }
 
+    /** Every kept answer, as saved ("time|value" by lookup), for the shared data snapshot. */
+    fun snapshotEntries(): Map<String, String> = prefs.entries()
+
+    /** Takes answers from the shared data snapshot (only those newer than the device's, see MetadataSnapshot). */
+    fun importEntries(entries: Map<String, String>) {
+        for ((key, entry) in entries) {
+            prefs.putString(key, entry)
+            memoryCache[key] = entry
+        }
+    }
+
     private fun readCache(key: String, ttlMs: Long = CACHE_TTL_MS): String? {
         val entry = memoryCache[key] ?: prefs.getString(key) ?: return null
         val savedAt = entry.substringBefore('|').toLongOrNull() ?: return null

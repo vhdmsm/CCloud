@@ -5,15 +5,14 @@
 -->
 <data-extraction-rules>
     <cloud-backup>
+        <!-- The shared movie data settings hold the publisher's GitHub token: kept on the device only -->
+        <exclude domain="sharedpref" path="metadata_snapshot.xml"/>
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
         -->
     </cloud-backup>
-    <!--
     <device-transfer>
-        <include .../>
-        <exclude .../>
+        <exclude domain="sharedpref" path="metadata_snapshot.xml"/>
     </device-transfer>
-    -->
 </data-extraction-rules>

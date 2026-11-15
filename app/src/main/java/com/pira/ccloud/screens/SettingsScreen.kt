@@ -73,6 +73,7 @@ import com.pira.ccloud.data.model.SubtitleMode
 import com.pira.ccloud.data.repository.WatchmodeClient
 import com.pira.ccloud.data.repository.OmdbClient
 import com.pira.ccloud.data.repository.DataUsage
+import com.pira.ccloud.data.repository.MetadataSnapshot
 import com.pira.ccloud.data.model.SubtitleSettings
 import com.pira.ccloud.data.model.VideoPlayerSettings
 import com.pira.ccloud.data.model.FontSettings
@@ -799,6 +800,14 @@ fun SettingsScreen(
         if (WatchmodeClient.isConfigured || OmdbClient.isConfigured) {
             item {
                 DataUsageCard()
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+        }
+        
+        // The shared copy of that data (downloaded by every device, uploaded by the publisher's)
+        if ((WatchmodeClient.isConfigured || OmdbClient.isConfigured) && MetadataSnapshot.isConfigured) {
+            item {
+                com.pira.ccloud.components.SharedDataCard()
                 Spacer(modifier = Modifier.height(16.dp))
             }
         }
