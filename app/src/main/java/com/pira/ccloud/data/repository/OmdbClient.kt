@@ -34,6 +34,9 @@ object OmdbClient {
 
     val isConfigured: Boolean get() = keys.isNotEmpty()
 
+    /** OMDb data to rank with: this build's keys, or the shared data (builds without keys only read it). */
+    val hasData: Boolean get() = isConfigured || MetadataSnapshot.isConfigured
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -79,7 +82,8 @@ object OmdbClient {
      * at its daily limit, no connection) an older kept answer is used, so hitting a limit loses nothing.
      */
     suspend fun details(imdbId: String, year: Int, cachedOnly: Boolean = false): Details? = withContext(Dispatchers.IO) {
-        if (imdbId.isEmpty() || !isConfigured) return@withContext null
+        // Without keys only kept (shared) answers are read: the loop below has no key to ask with
+        if (imdbId.isEmpty() || !hasData) return@withContext null
         val ttl = if (year >= Calendar.getInstance().get(Calendar.YEAR) - 1) RECENT_CACHE_TTL_MS else CACHE_TTL_MS
         val cached = readCache(imdbId)
         if (cached != null && System.currentTimeMillis() - cached.first <= ttl) {

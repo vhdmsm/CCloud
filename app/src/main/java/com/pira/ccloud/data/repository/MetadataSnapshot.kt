@@ -78,7 +78,11 @@ object MetadataSnapshot {
         if (prefs == null) prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    private val isUsable: Boolean get() = isConfigured && (WatchmodeClient.isConfigured || OmdbClient.isConfigured)
+    // Every build takes the shared data, with or without keys of its own
+    private val isUsable: Boolean get() = isConfigured
+
+    /** Only a build with its own keys fetches new data, so only such a build can share (upload) any. */
+    val canPublish: Boolean get() = WatchmodeClient.isConfigured || OmdbClient.isConfigured
 
     /**
      * When the app opens: downloads a newer snapshot when one is due; on the publisher's device,
@@ -100,7 +104,7 @@ object MetadataSnapshot {
     /** When the app goes to the background: the publisher's device uploads what it fetched meanwhile. */
     fun publishInBackground(context: Context) {
         init(context)
-        if (!isUsable || !hasToken) return
+        if (!isUsable || !canPublish || !hasToken) return
         scope.launch {
             try {
                 publishIfChanged()
@@ -111,7 +115,7 @@ object MetadataSnapshot {
     }
 
     private suspend fun publishIfChanged() {
-        if (!hasToken || !autoPublish) return
+        if (!canPublish || !hasToken || !autoPublish) return
         val last = lastPublish
         if (System.currentTimeMillis() - last < PUBLISH_INTERVAL_MS) return
         val newest = SnapshotRules.newestSave(OmdbClient.snapshotEntries().values + WatchmodeClient.snapshotEntries().values)
@@ -205,6 +209,7 @@ object MetadataSnapshot {
     suspend fun publish(): Result<Int> = withContext(Dispatchers.IO) {
         lock.withLock {
             val p = prefs ?: return@withLock Result.failure(IllegalStateException("not set up"))
+            if (!canPublish) return@withLock Result.failure(IllegalStateException("This build has no API keys, so it has no data of its own to share"))
             val token = currentToken(p)
                 ?: return@withLock Result.failure(IllegalStateException("Not signed in to GitHub"))
             try {

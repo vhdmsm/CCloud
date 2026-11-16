@@ -808,7 +808,7 @@ fun SettingsScreen(
         }
         
         // The shared copy of that data (downloaded by every device, uploaded by the publisher's)
-        if ((WatchmodeClient.isConfigured || OmdbClient.isConfigured) && MetadataSnapshot.isConfigured) {
+        if (MetadataSnapshot.isConfigured) {
             item {
                 com.pira.ccloud.components.SharedDataCard()
                 Spacer(modifier = Modifier.height(16.dp))

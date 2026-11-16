@@ -45,10 +45,11 @@ class RankedMovieRepository(
     // Release years before this aren't shown: lists read newest first end there (null: no limit)
     private val minYear: () -> Int? = { null },
     // Whether one more title may get new (paid) data now; test mode allows a few a day
-    private val mayFetchNewData: () -> Boolean = DataUsage::tryUseLookup,
+    // (builds without keys never fetch: they rank with the shared data alone)
+    private val mayFetchNewData: () -> Boolean = { WatchmodeClient.isConfigured && DataUsage.tryUseLookup() },
     // Series Best Overall: the most popular series, to pick which series get data first (null: unknown)
     private val seriesPopularity: suspend () -> SeriesPopularity? = {
-        if (WatchmodeClient.isConfigured) WatchmodeClient.popularSeries(MovieRanking.SERIES_MIN_START_YEAR) else null
+        if (WatchmodeClient.hasData) WatchmodeClient.popularSeries(MovieRanking.SERIES_MIN_START_YEAR) else null
     }
 ) {
     data class RankedPage(
@@ -410,7 +411,8 @@ class RankedMovieRepository(
         // Only Famous Actors depends on the actors alone; the combined sorts do without them
         val castMissing = !loading && filterType == FilterType.STAR_CAST && !dataMissing &&
             batch.isNotEmpty() && batch.none { it.info?.castPopularity != null }
-        val omdbMissing = !loading && filterType.needsOmdb && !OmdbClient.isAvailable && batch.any { it.awards == null }
+        // Builds without keys have only the shared data: nothing is "out of credits" there
+        val omdbMissing = !loading && filterType.needsOmdb && OmdbClient.isConfigured && !OmdbClient.isAvailable && batch.any { it.awards == null }
         val year = Calendar.getInstance().get(Calendar.YEAR)
         fun scoreOf(facts: MovieFacts): Double = when {
             // Series weigh the start year in, with or without data
@@ -427,6 +429,7 @@ class RankedMovieRepository(
         val ranked = scored.sortedWith(if (filterType == FilterType.NEWEST) byScore else byScore.thenByDescending { it.first.imdb })
             .map { it.first }
         val notice = when {
+            dataMissing && !WatchmodeClient.isConfigured -> "No shared movie data for these yet, showing movies by IMDB score"
             dataMissing -> "Movie data from Watchmode isn't available right now (monthly limit or no connection), showing movies by IMDB score"
             castMissing -> "Actor data isn't available right now, showing movies by IMDB score"
             omdbMissing -> "IMDb ratings and awards from OMDb aren't available right now (daily limit or no connection)"
@@ -495,7 +498,7 @@ class RankedMovieRepository(
         val needsInfo = filterType.needsMovieData || (filterType.needsOmdb && describedAwards == null)
         val info = when {
             // Answers from the cache even when the credits are out
-            needsInfo && WatchmodeClient.isConfigured -> if (cachedOnly) {
+            needsInfo && WatchmodeClient.hasData -> if (cachedOnly) {
                 WatchmodeClient.movie(movie.title, movie.year, filterType.needsCast, cachedOnly = true, series = series, languages = languages(movie))
             } else {
                 watchmodePermits.withPermit {
@@ -503,7 +506,7 @@ class RankedMovieRepository(
                 }
             }
             // Newest uses a release date Watchmode already gave for another sort, at no cost
-            filterType == FilterType.NEWEST && WatchmodeClient.isConfigured ->
+            filterType == FilterType.NEWEST && WatchmodeClient.hasData ->
                 WatchmodeClient.movie(movie.title, movie.year, withCast = false, cachedOnly = true, series = series, languages = languages(movie))
             else -> null
         }
@@ -616,9 +619,9 @@ object MovieRanking {
         }
     }
 
-    /** Whether the build has the keys [filterType] needs (sorts without them are hidden). */
+    /** Whether there's data for [filterType]: the build's keys or the shared data (otherwise the sort is hidden). */
     fun isAvailable(filterType: FilterType): Boolean =
-        (!filterType.needsMovieData || WatchmodeClient.isConfigured) && (!filterType.needsOmdb || OmdbClient.isConfigured)
+        (!filterType.needsMovieData || WatchmodeClient.hasData) && (!filterType.needsOmdb || OmdbClient.hasData)
 
     /** Rated, and below [MIN_IMDB]; 0 means not rated yet. */
     fun isLowRated(imdb: Double): Boolean = imdb > 0.0 && imdb < MIN_IMDB

@@ -82,8 +82,13 @@ fun SharedDataCard() {
                 )
             }
             Text(
-                text = "Ratings, popularity and awards already fetched are downloaded from a shared copy, " +
-                    "so the ranked sorts need fewer API requests.",
+                text = if (MetadataSnapshot.canPublish) {
+                    "Ratings, popularity and awards already fetched are downloaded from a shared copy, " +
+                        "so the ranked sorts need fewer API requests."
+                } else {
+                    "The ranked sorts use a shared copy of ratings, popularity and awards, downloaded " +
+                        "automatically every few hours. Movies not in it yet are ranked by IMDB score."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -110,7 +115,8 @@ fun SharedDataCard() {
                     },
                     modifier = Modifier.focusHighlight()
                 ) { Text("Download now") }
-                if (!hasToken && signInCode == null) {
+                // Only the owner's build (with API keys) fetches data, so only it can share some
+                if (MetadataSnapshot.canPublish && !hasToken && signInCode == null) {
                     TextButton(
                         onClick = {
                             if (!GitHubDeviceLogin.isConfigured) {
@@ -214,7 +220,7 @@ fun SharedDataCard() {
                     modifier = Modifier.padding(top = 8.dp).focusHighlight()
                 ) { Text("Save token") }
             }
-            if (hasToken) {
+            if (hasToken && MetadataSnapshot.canPublish) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
