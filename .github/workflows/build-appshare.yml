@@ -11,6 +11,10 @@ on:
         required: true
         default: 'v1.0.0'
 
+# Creating the release needs write access (the default token is read-only)
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -125,29 +129,29 @@ jobs:
           echo "TAG_NAME=$TAG_NAME" >> $GITHUB_ENV
           echo "Tag name: $TAG_NAME"
 
+      # The tag's notes from release-notes/<tag>.md, or general notes when there is none
+      - name: Pick release notes
+        run: |
+          NOTES="release-notes/${TAG_NAME}.md"
+          if [ ! -f "$NOTES" ]; then
+            NOTES=release/notes.md
+            {
+              echo "## CCloud ${TAG_NAME}"
+              echo
+              echo "Download \`CCloud-universal.apk\` below (all architectures, Android 7.0+) and install it over the previous version."
+            } > "$NOTES"
+          fi
+          echo "NOTES_FILE=$NOTES" >> $GITHUB_ENV
+          echo "VERSION=${TAG_NAME#v}" >> $GITHUB_ENV
+
       - name: Create Release
         id: create_release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ env.TAG_NAME }}
-          name: Release ${{ env.TAG_NAME }}
+          name: CCloud ${{ env.VERSION }}
           draft: false
           prerelease: false
           files: |
             release/CCloud-universal.apk
-          body: |
-            ## CCloud Release ${{ env.TAG_NAME }}
-            
-            ### What's New
-            - Modernized UI with enhanced user experience
-            - Improved performance and stability
-            - New features and bug fixes
-            
-            ### Download Options
-            - [Universal APK (all architectures)](https://github.com/${{ github.repository }}/releases/download/${{ env.TAG_NAME }}/CCloud-universal.apk) - Compatible with all devices
-
-            ### Installation
-            1. Download the appropriate APK file for your device
-            2. Enable "Install from unknown sources" in your device settings
-            3. Open and install the APK
-            4. Launch CCloud and enjoy your movies!
+          body_path: ${{ env.NOTES_FILE }}
