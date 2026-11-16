@@ -73,7 +73,8 @@ sealed class AppScreens(
         showSidebar = true
     )
 
-    // Movies and series being watched / already seen (the TV sidebar only: the phone's bottom bar is full)
+    // Movies and series being watched / already seen. In the TV sidebar; the phone's bottom bar is
+    // full, so there they are tabs on the Favorites screen
     data object Watching : AppScreens(
         route = "watching",
         resourceId = R.string.watching,

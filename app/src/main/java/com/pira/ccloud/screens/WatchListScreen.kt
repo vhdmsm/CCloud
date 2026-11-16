@@ -60,7 +60,7 @@ import com.pira.ccloud.utils.WatchHistory
 
 /** The Watching or Seen section: the movies and series with that status, the most recent first. */
 @Composable
-fun WatchListScreen(status: WatchStatus, navController: NavController) {
+fun WatchListScreen(status: WatchStatus, navController: NavController, showTitle: Boolean = true) {
     val context = LocalContext.current
     var items by remember(status) { mutableStateOf(WatchHistory.load(context, status)) }
     // Read again when shown, e.g. back from a movie that was finished in the meantime
@@ -76,12 +76,15 @@ fun WatchListScreen(status: WatchStatus, navController: NavController) {
     FocusWhenReady(firstItemFocus, items.isNotEmpty())
 
     Column(modifier = Modifier.fillMaxSize()) {
-        Text(
-            text = if (status == WatchStatus.WATCHING) "Watching" else "Seen",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 8.dp)
-        )
+        // The phone shows the section's name on its tab instead
+        if (showTitle) {
+            Text(
+                text = if (status == WatchStatus.WATCHING) "Watching" else "Seen",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 8.dp)
+            )
+        }
         if (items.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(

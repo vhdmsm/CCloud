@@ -88,7 +88,7 @@ CCloud is a modern Android streaming application built with Jetpack Compose and 
 - **Organize**: Remove items from favorites with individual delete options
 - **Bulk Actions**: Clear all favorites with a single action
 
-### 👀 Watching and Seen (TV sidebar)
+### 👀 Watching and Seen (TV sidebar, and tabs on the phone's Favorites screen)
 - **Watching**: movies and series you start playing, the most recent first, with where a movie was left
 - **Seen**: a movie moves here once you watch it to the end (95%), a series once you finish its last episode
 - **Mark as seen**: a button on each movie's and series' page, for things watched elsewhere (press it again to take it off Seen)
