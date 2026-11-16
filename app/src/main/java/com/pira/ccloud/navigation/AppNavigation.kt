@@ -19,6 +19,8 @@ import com.pira.ccloud.screens.SplashScreen
 import com.pira.ccloud.screens.FavoritesScreen
 import com.pira.ccloud.screens.CountryScreen
 import com.pira.ccloud.screens.WatchListScreen
+import com.pira.ccloud.screens.PhoneLibraryScreen
+import com.pira.ccloud.utils.DeviceUtils
 import com.pira.ccloud.data.model.WatchStatus
 import com.pira.ccloud.ui.movies.MoviesViewModel
 import com.pira.ccloud.ui.search.SearchViewModel
@@ -91,7 +93,12 @@ fun AppNavigation(
             SettingsScreen(onThemeSettingsChanged, onFontSettingsChanged, navController) // Pass font settings callback
         }
         composable(route = AppScreens.Favorites.route) {
-            FavoritesScreen(navController)
+            // On the phone, Watching and Seen are tabs beside the favorites (the bottom bar is full)
+            if (DeviceUtils.isTv(LocalContext.current)) {
+                FavoritesScreen(navController)
+            } else {
+                PhoneLibraryScreen(navController)
+            }
         }
         composable(route = AppScreens.Watching.route) {
             WatchListScreen(status = WatchStatus.WATCHING, navController = navController)
