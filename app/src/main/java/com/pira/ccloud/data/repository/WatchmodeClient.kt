@@ -63,6 +63,12 @@ object WatchmodeClient {
 
     val isConfigured: Boolean get() = keys.isNotEmpty()
 
+    /**
+     * Whether there is Watchmode data to rank with: this build's own keys, or the shared data
+     * (MetadataSnapshot) that builds without keys use. Only builds with keys make requests.
+     */
+    val hasData: Boolean get() = isConfigured || MetadataSnapshot.isConfigured
+
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
