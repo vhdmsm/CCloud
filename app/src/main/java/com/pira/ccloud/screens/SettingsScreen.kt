@@ -255,12 +255,15 @@ fun SettingsScreen(
         isCheckingUpdate = true
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val url = URL("https://api.github.com/repos/code3-dev/CCloud/releases")
+                // This fork's own releases (signed with its own key; the upstream's can't install over it)
+                val url = URL("https://api.github.com/repos/vhdmsm/CCloud/releases")
                 val connection = url.openConnection()
                 connection.setRequestProperty("User-Agent", "CCloud-App")
                 val response = connection.getInputStream().bufferedReader().use { it.readText() }
                 
+                // Only app versions (v1.2.3...), not other releases such as the shared movie data
                 val releases = json.decodeFromString<List<GitHubRelease>>(response)
+                    .filter { Regex("^v\\d").containsMatchIn(it.tag_name) }
                 if (releases.isNotEmpty()) {
                     val latestRelease = releases.first()
                     val latestVersion = latestRelease.tag_name
