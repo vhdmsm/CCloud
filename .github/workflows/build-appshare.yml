@@ -69,18 +69,26 @@ jobs:
         with:
           gradle-version: wrapper
 
-      - name: Decode Keystore
+      # Without all four secrets nothing is written and the build falls back to the debug key
+      # (before, an empty keystore file was written, which made the signing step fail)
+      - name: Set up release signing
+        env:
+          KEY_STORE: ${{ secrets.KEY_STORE }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "${{ secrets.KEY_STORE }}" | base64 --decode > app/keystore.jks
-        continue-on-error: true
-
-      - name: Create keystore properties file
-        run: |
-          echo "storePassword=${{ secrets.KEY_STORE_PASSWORD }}" > key.properties
-          echo "keyPassword=${{ secrets.KEY_PASSWORD }}" >> key.properties
-          echo "keyAlias=${{ secrets.KEY_ALIAS }}" >> key.properties
-          echo "storeFile=keystore.jks" >> key.properties
-        continue-on-error: true
+          if [ -z "$KEY_STORE" ] || [ -z "$KEY_STORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::warning::Release signing secrets are not set; the APK is signed with the debug key"
+            exit 0
+          fi
+          echo "$KEY_STORE" | base64 --decode > app/keystore.jks
+          {
+            echo "storePassword=$KEY_STORE_PASSWORD"
+            echo "keyPassword=$KEY_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "storeFile=keystore.jks"
+          } > key.properties
 
       # API keys for online English subtitles (OpenSubtitles) and the ranked movie sorts (Watchmode, OMDb);
       # a feature whose key is missing is hidden

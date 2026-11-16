@@ -146,9 +146,40 @@ jobs:
           chmod +x gradlew
           ./gradlew testDebugUnitTest --stacktrace
 
-      # Release build (minified like the published APK), signed with the debug key
+      # Sign with the release key when its secrets are set, so the APK installs as an update over the
+      # published app; without them (e.g. pull requests from forks) the debug key is used
+      - name: Set up release signing
+        env:
+          KEY_STORE: ${{ secrets.KEY_STORE }}
+          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEY_STORE" ] || [ -z "$KEY_STORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "::warning::Release signing secrets are not set; the APK is signed with the debug key and will not install over the published app"
+            exit 0
+          fi
+          echo "$KEY_STORE" | base64 --decode > app/keystore.jks
+          {
+            echo "storePassword=$KEY_STORE_PASSWORD"
+            echo "keyPassword=$KEY_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "storeFile=keystore.jks"
+          } > key.properties
+          echo "APK will be signed with the release key"
+
+      # Release build (minified like the published APK)
       - name: Build APK
         run: ./gradlew assembleRelease --stacktrace -x lint
+
+      # Prints the signing certificate so it can be compared with the installed app's
+      - name: Show APK signer
+        run: |
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner
+          for apk in app/build/outputs/apk/release/*.apk; do
+            echo "$apk"; "$APKSIGNER" verify --print-certs "$apk" | grep -E "DN|SHA-256"
+          done
+        continue-on-error: true
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
