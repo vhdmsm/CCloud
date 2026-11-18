@@ -1,5 +1,10 @@
 package com.pira.ccloud.ui.theme
 
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
+import com.pira.ccloud.utils.AppLanguage
+import com.pira.ccloud.data.model.FontType
 import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -165,8 +170,9 @@ fun CCloudTheme(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
     
-    // Load font family based on font settings
-    val fontFamily = FontManager.loadFontFamily(context, fontSettings.fontType)
+    // Load font family based on font settings; Persian reads best in Vazirmatn unless another is chosen
+    val fontType = if (AppLanguage.isPersian && fontSettings.fontType == FontType.DEFAULT) FontType.VAZIRMATN else fontSettings.fontType
+    val fontFamily = FontManager.loadFontFamily(context, fontType)
     
     val colorScheme = when {
         themeSettings.primaryColor != defaultPrimaryColor -> {
@@ -222,7 +228,12 @@ fun CCloudTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = appTypography(fontFamily),
-        content = content
-    )
+        typography = appTypography(fontFamily)
+    ) {
+        // Persian is read right to left, so its screens are laid out mirrored
+        CompositionLocalProvider(
+            LocalLayoutDirection provides if (AppLanguage.isPersian) LayoutDirection.Rtl else LayoutDirection.Ltr,
+            content = content
+        )
+    }
 }

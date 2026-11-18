@@ -1,5 +1,7 @@
 package com.pira.ccloud.navigation
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -134,14 +136,14 @@ fun SidebarNavigation(navController: NavController) {
                                     }
                                     Icon(
                                         imageVector = screen.icon ?: Icons.Default.Movie, // Provide a fallback icon
-                                        contentDescription = stringResource(screen.resourceId),
+                                        contentDescription = tr(stringResource(screen.resourceId)),
                                         tint = iconColor,
                                         modifier = Modifier.size(32.dp) // Increased size
                                     )
                                 }
                                 // Spacer(modifier = Modifier.height(2.dp)) // Increased spacing
                                 Text(
-                                    text = stringResource(screen.resourceId),
+                                    text = tr(stringResource(screen.resourceId)),
                                     color = textColor,
                                     fontSize = androidx.compose.material3.MaterialTheme.typography.labelMedium.fontSize, // Increased font size
                                     fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Normal,

@@ -1,5 +1,7 @@
 package com.pira.ccloud.screens
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -173,7 +175,7 @@ fun LoadingScreen() {
     ) {
         // Add a title while loading
         Text(
-            text = "Loading Movies...",
+            text = tr("Loading Movies..."),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(16.dp),
@@ -480,7 +482,7 @@ fun MovieItem(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Star,
-                            contentDescription = "Rating",
+                            contentDescription = tr("Rating"),
                             tint = Color.Yellow,
                             modifier = Modifier.size(16.dp)
                         )
@@ -548,7 +550,7 @@ fun ErrorScreen(
         verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center
     ) {
         Text(
-            text = "Failed to load movies",
+            text = tr("Failed to load movies"),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(bottom = 8.dp)
@@ -567,11 +569,11 @@ fun ErrorScreen(
         ) {
             Icon(
                 imageVector = Icons.Default.Refresh,
-                contentDescription = "Retry",
+                contentDescription = tr("Retry"),
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Retry")
+            Text(tr("Retry"))
         }
     }
 }
@@ -598,7 +600,7 @@ fun ErrorItem(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Failed to load more movies",
+                text = tr("Failed to load more movies"),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -620,11 +622,11 @@ fun ErrorItem(
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
-                    contentDescription = "Retry",
+                    contentDescription = tr("Retry"),
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Retry")
+                Text(tr("Retry"))
             }
         }
     }

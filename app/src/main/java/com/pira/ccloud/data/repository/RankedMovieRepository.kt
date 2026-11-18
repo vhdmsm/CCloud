@@ -1,5 +1,7 @@
 package com.pira.ccloud.data.repository
 
+import com.pira.ccloud.utils.tr
+
 import com.pira.ccloud.data.model.FilterType
 import com.pira.ccloud.data.model.Movie
 import com.pira.ccloud.utils.LanguageUtils
@@ -205,7 +207,7 @@ class RankedMovieRepository(
                 // The rest of a year cut by the page limit comes first on the next load, not an older year now
                 if (yearCut) break
                 // Shown while the next year's list is read
-                if (hasMore && yearsRanked < yearsInBatch) onUpdate(result(ranked, "Reading older movies…"))
+                if (hasMore && yearsRanked < yearsInBatch) onUpdate(result(ranked, tr("Reading older movies…")))
             }
             pages.values.forEach { it.cancel() }
         }
@@ -269,7 +271,7 @@ class RankedMovieRepository(
         val pool = seriesPool?.takeIf { it.genreId == genreId && seen.isNotEmpty() }
             ?: SeriesPool(genreId).also { seriesPool = it }
         if (popularSeries == null) {
-            onProgress("Reading the most popular series…")
+            onProgress(tr("Reading the most popular series…"))
             val startedAt = System.currentTimeMillis()
             popularSeries = try {
                 seriesPopularity()
@@ -290,7 +292,7 @@ class RankedMovieRepository(
             if (kth != null && pool.oldestYearRead != Int.MAX_VALUE &&
                 kth >= MovieRanking.seriesBestPreScore(pool.oldestYearRead, year)
             ) break
-            onProgress("Reading the series list: ${pool.series.size} series…")
+            onProgress(tr("Reading the series list: %d series…", pool.series.size))
             val first = pool.nextPage
             val pages = coroutineScope {
                 (first until first + SERIES_PAGES_PER_READ).map { async { fetchWithRetry(it, genreId, FilterType.BY_YEAR) } }.awaitAll()
@@ -359,8 +361,11 @@ class RankedMovieRepository(
         if (pending.isEmpty()) return group(onlyReady = false)
 
         val showAll = before.isEmpty()
-        val what = if (year != null) "data for $year movies" else "movie data"
-        fun progress() = "Getting $what: ${ready.size} of ${candidates.size}…"
+        fun progress() = if (year != null) {
+            tr("Getting data for %s movies: %d of %d…", year, ready.size, candidates.size)
+        } else {
+            tr("Getting movie data: %d of %d…", ready.size, candidates.size)
+        }
         emit(before + group(onlyReady = !showAll), progress())
         coroutineScope {
             val ticker = launch {
@@ -429,18 +434,18 @@ class RankedMovieRepository(
         val ranked = scored.sortedWith(if (filterType == FilterType.NEWEST) byScore else byScore.thenByDescending { it.first.imdb })
             .map { it.first }
         val notice = when {
-            dataMissing && !WatchmodeClient.isConfigured -> "No shared movie data for these yet, showing movies by IMDB score"
-            dataMissing -> "Movie data from Watchmode isn't available right now (monthly limit or no connection), showing movies by IMDB score"
-            castMissing -> "Actor data isn't available right now, showing movies by IMDB score"
-            omdbMissing -> "IMDb ratings and awards from OMDb aren't available right now (daily limit or no connection)"
+            dataMissing && !WatchmodeClient.isConfigured -> tr("No shared movie data for these yet, showing movies by IMDB score")
+            dataMissing -> tr("Movie data from Watchmode isn't available right now (monthly limit or no connection), showing movies by IMDB score")
+            castMissing -> tr("Actor data isn't available right now, showing movies by IMDB score")
+            omdbMissing -> tr("IMDb ratings and awards from OMDb aren't available right now (daily limit or no connection)")
             filterType.needsMovieData && WatchmodeClient.isSavingCredits ->
-                "Watchmode credits are low this month: only this year's movies get new data"
+                tr("Watchmode credits are low this month: only this year's movies get new data")
             DataUsage.isTestAllowanceUsedUp ->
-                "Test mode: today's ${DataUsage.TEST_TITLES_PER_DAY} titles with new data are used. Choose Unlimited in Settings for all"
+                tr("Test mode: today's %d titles with new data are used. Choose Unlimited in Settings for all", DataUsage.TEST_TITLES_PER_DAY)
             else -> null
         }
         val attribution = if (batch.any { it.info != null }) {
-            listOfNotNull("Movie data from Watchmode", WatchmodeClient.creditsText).joinToString(" · ")
+            listOfNotNull(tr("Movie data from Watchmode"), WatchmodeClient.creditsText).joinToString(" · ")
         } else {
             null
         }

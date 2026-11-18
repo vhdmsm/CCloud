@@ -1,5 +1,7 @@
 package com.pira.ccloud.ui.series
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -190,7 +192,7 @@ class SeriesViewModel : ViewModel() {
                         // cancelled)
                         launch {
                             if (updatesSaved) {
-                                rankingProgress = update.progress?.let { "Updating the list: $it" }
+                                rankingProgress = update.progress?.let { tr("Updating the list: %s", it) }
                             } else {
                                 series = shownBefore + update.movies.mapNotNull { it.toSeries() }.filter { isShown(it) }
                                 rankingNotice = update.notice

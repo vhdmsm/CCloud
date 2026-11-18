@@ -1,5 +1,7 @@
 package com.pira.ccloud.screens
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -106,7 +108,7 @@ fun CountryScreen(
             IconButton(onClick = { navController?.popBackStack() }) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back"
+                    contentDescription = tr("Back")
                 )
             }
             
@@ -124,7 +126,7 @@ fun CountryScreen(
                 IconButton(onClick = { filterMenuExpanded = true }) {
                     Icon(
                         imageVector = Icons.Default.FilterList,
-                        contentDescription = "Filter",
+                        contentDescription = tr("Filter"),
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -134,21 +136,21 @@ fun CountryScreen(
                     onDismissRequest = { filterMenuExpanded = false }
                 ) {
                     DropdownMenuItem(
-                        text = { Text("Default") },
+                        text = { Text(tr("Default")) },
                         onClick = {
                             viewModel.selectFilterType(FilterType.DEFAULT)
                             filterMenuExpanded = false
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("By Year") },
+                        text = { Text(tr("By Year")) },
                         onClick = {
                             viewModel.selectFilterType(FilterType.BY_YEAR)
                             filterMenuExpanded = false
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("By IMDB") },
+                        text = { Text(tr("By IMDB")) },
                         onClick = {
                             viewModel.selectFilterType(FilterType.BY_IMDB)
                             filterMenuExpanded = false
@@ -169,9 +171,9 @@ fun CountryScreen(
                 Text(
                     text = when (selectedFilterType) {
                         FilterType.DEFAULT -> ""
-                        FilterType.BY_YEAR -> "Sorted by Year"
+                        FilterType.BY_YEAR -> tr("Sorted by Year")
                         // By IMDB; the ranked sorts are only offered for movies
-                        else -> "Sorted by IMDB"
+                        else -> tr("Sorted by IMDB")
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary
@@ -218,7 +220,7 @@ fun CountryLoadingScreen() {
     ) {
         // Add a title while loading
         Text(
-            text = "Loading Content...",
+            text = tr("Loading Content..."),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(16.dp),
@@ -518,7 +520,7 @@ fun CountryPosterItem(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Star,
-                            contentDescription = "Rating",
+                            contentDescription = tr("Rating"),
                             tint = Color.Yellow,
                             modifier = Modifier.size(16.dp)
                         )
@@ -550,7 +552,7 @@ fun CountryPosterItem(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = if (poster.isMovie()) "Movie" else "Series",
+                            text = if (poster.isMovie()) tr("Movie") else tr("Series"),
                             style = MaterialTheme.typography.bodySmall,
                             color = if (poster.isMovie()) {
                                 MaterialTheme.colorScheme.onPrimary
@@ -616,7 +618,7 @@ fun CountryErrorScreen(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Failed to load content",
+            text = tr("Failed to load content"),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(bottom = 8.dp)
@@ -635,11 +637,11 @@ fun CountryErrorScreen(
         ) {
             Icon(
                 imageVector = Icons.Default.Refresh,
-                contentDescription = "Retry",
+                contentDescription = tr("Retry"),
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Retry")
+            Text(tr("Retry"))
         }
     }
 }
@@ -666,7 +668,7 @@ fun CountryErrorItem(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Failed to load more content",
+                text = tr("Failed to load more content"),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -688,11 +690,11 @@ fun CountryErrorItem(
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
-                    contentDescription = "Retry",
+                    contentDescription = tr("Retry"),
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Retry")
+                Text(tr("Retry"))
             }
         }
     }

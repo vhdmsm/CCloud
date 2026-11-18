@@ -1,5 +1,7 @@
 package com.pira.ccloud.components
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -65,18 +67,18 @@ fun ExpandableText(
             IconButton(
                 onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    val clip = android.content.ClipData.newPlainText("Description", text)
+                    val clip = android.content.ClipData.newPlainText(tr("Description"), text)
                     clipboard.setPrimaryClip(clip)
                     
                     // Show a toast to indicate success
-                    android.widget.Toast.makeText(context, "Description copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, tr("Description copied to clipboard"), android.widget.Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier
                     .padding(start = 8.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Copy description",
+                    contentDescription = tr("Copy description"),
                     tint = MaterialTheme.colorScheme.primary
                 )
             }
@@ -103,7 +105,7 @@ fun ExpandableText(
                         .padding(vertical = 8.dp)
                 ) {
                     Text(
-                        text = if (expanded) "Show Less" else "Show More",
+                        text = if (expanded) tr("Show Less") else tr("Show More"),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold

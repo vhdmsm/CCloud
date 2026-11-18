@@ -1,5 +1,7 @@
 package com.pira.ccloud.ui.movies
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -167,7 +169,7 @@ class MoviesViewModel : ViewModel() {
                         // cancelled)
                         launch {
                             if (updatesSaved) {
-                                rankingProgress = update.progress?.let { "Updating the list: $it" }
+                                rankingProgress = update.progress?.let { tr("Updating the list: %s", it) }
                             } else {
                                 movies = shownBefore + update.movies.filter { LanguageUtils.shouldDisplayTitle(it.title) }
                                 rankingNotice = update.notice

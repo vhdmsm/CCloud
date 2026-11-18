@@ -1,5 +1,7 @@
 package com.pira.ccloud.screens
 
+import com.pira.ccloud.utils.tr
+
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -81,6 +83,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import com.pira.ccloud.components.FocusWhenReady
 import com.pira.ccloud.components.focusHighlight
+import com.pira.ccloud.utils.bestQualityFirst
+import com.pira.ccloud.components.optionFocusHighlight
+import com.pira.ccloud.components.OptionStyle
+import com.pira.ccloud.components.OptionButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -125,11 +131,11 @@ fun SingleMovieScreen(
                 IconButton(onClick = { navController.popBackStack() }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back"
+                        contentDescription = tr("Back")
                     )
                 }
                 Text(
-                    text = "Movie not found",
+                    text = tr("Movie not found"),
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(top = 16.dp)
@@ -239,8 +245,8 @@ fun MovieDetailsContent(
                 if (showImageDialog) {
                     AlertDialog(
                         onDismissRequest = { showImageDialog = false },
-                        title = { Text("Image Options") },
-                        text = { Text("Choose an action for this image") },
+                        title = { Text(tr("Image Options")) },
+                        text = { Text(tr("Choose an action for this image")) },
                         confirmButton = {
                             TextButton(
                                 onClick = {
@@ -248,14 +254,14 @@ fun MovieDetailsContent(
                                     showImageDialog = false
                                 }
                             ) {
-                                Text("Copy Image URL")
+                                Text(tr("Copy Image URL"))
                             }
                         },
                         dismissButton = {
                             TextButton(
                                 onClick = { showImageDialog = false }
                             ) {
-                                Text("Cancel")
+                                Text(tr("Cancel"))
                             }
                         }
                     )
@@ -294,7 +300,7 @@ fun MovieDetailsContent(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Star,
-                            contentDescription = "Rating",
+                            contentDescription = tr("Rating"),
                             tint = Color.Yellow,
                             modifier = Modifier.size(24.dp)
                         )
@@ -320,7 +326,7 @@ fun MovieDetailsContent(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = tr("Back"),
                     tint = MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -341,8 +347,8 @@ fun MovieDetailsContent(
             if (showRemoveFavoriteDialog) {
                 AlertDialog(
                     onDismissRequest = { showRemoveFavoriteDialog = false },
-                    title = { Text("Remove from Favorites") },
-                    text = { Text("Are you sure you want to remove this movie from your favorites?") },
+                    title = { Text(tr("Remove from Favorites")) },
+                    text = { Text(tr("Are you sure you want to remove this movie from your favorites?")) },
                     confirmButton = {
                         TextButton(
                             onClick = {
@@ -350,17 +356,17 @@ fun MovieDetailsContent(
                                 isFavorite = false
                                 showRemoveFavoriteDialog = false
                                 // Show toast
-                                android.widget.Toast.makeText(context, "Removed from favorites", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, tr("Removed from favorites"), android.widget.Toast.LENGTH_SHORT).show()
                             }
                         ) {
-                            Text("Remove")
+                            Text(tr("Remove"))
                         }
                     },
                     dismissButton = {
                         TextButton(
                             onClick = { showRemoveFavoriteDialog = false }
                         ) {
-                            Text("Cancel")
+                            Text(tr("Cancel"))
                         }
                     }
                 )
@@ -391,7 +397,7 @@ fun MovieDetailsContent(
                         StorageUtils.saveFavorite(context, favoriteItem)
                         isFavorite = true
                         // Show toast
-                        android.widget.Toast.makeText(context, "Added to favorites", android.widget.Toast.LENGTH_SHORT).show()
+                        android.widget.Toast.makeText(context, tr("Added to favorites"), android.widget.Toast.LENGTH_SHORT).show()
                     }
                 },
                 modifier = Modifier
@@ -400,7 +406,7 @@ fun MovieDetailsContent(
             ) {
                 Icon(
                     imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                    contentDescription = "Favorite",
+                    contentDescription = tr("Favorite"),
                     tint = if (isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                 )
             }
@@ -409,7 +415,7 @@ fun MovieDetailsContent(
         // Genres
         if (movie.genres.isNotEmpty()) {
             Text(
-                text = "Genres",
+                text = tr("Genres"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -460,7 +466,7 @@ fun MovieDetailsContent(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Description",
+                text = tr("Description"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
@@ -489,7 +495,7 @@ fun MovieDetailsContent(
         // Sources/Quality options
         if (movie.sources.isNotEmpty()) {
             Text(
-                text = "Available Qualities",
+                text = tr("Available Qualities"),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary,
@@ -499,7 +505,7 @@ fun MovieDetailsContent(
             // Where this movie was left last time; playing any quality continues from there
             rememberPlaybackPosition(PlaybackPositions.movieKey(movie.id))?.let { position ->
                 Text(
-                    text = "Continue watching from ${formatTime(position)}",
+                    text = tr("Continue watching from %s", formatTime(position)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp)
@@ -513,12 +519,14 @@ fun MovieDetailsContent(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp)
             ) {
-                movie.sources.forEachIndexed { index, source ->
+                // Best quality on top; tapping one plays it (other players and downloads are in its dialog)
+                val sources = remember(movie.sources) { movie.sources.bestQualityFirst() }
+                sources.forEachIndexed { index, source ->
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .then(if (index == 0) Modifier.focusRequester(firstQualityFocus) else Modifier)
-                            .focusHighlight(focusedScale = 1.03f)
+                            .optionFocusHighlight(shape = RoundedCornerShape(12.dp), focusedScale = 1.03f)
                             .clickable {
                                 selectedSource = source
                                 showSourceDialog = true
@@ -544,7 +552,7 @@ fun MovieDetailsContent(
                             
                             Icon(
                                 imageVector = Icons.Default.PlayArrow,
-                                contentDescription = "Play",
+                                contentDescription = tr("Play"),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                         }
@@ -557,6 +565,10 @@ fun MovieDetailsContent(
     }
 }
 
+/**
+ * What to do with a quality: watching comes first (and is where the remote starts), the other
+ * players and downloads after it.
+ */
 @Composable
 fun SourceOptionsDialog(
     source: Source,
@@ -578,8 +590,11 @@ fun SourceOptionsDialog(
             onOpenInMXPlayer = { DownloadUtils.openWithMXPlayer(context, source.url) },
             onOpenInKMPlayer = { DownloadUtils.openWithKMPlayer(context, source.url) }
         )
+        return
     }
     
+    val playFocus = remember { FocusRequester() }
+    FocusWhenReady(playFocus, ready = true)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
@@ -590,67 +605,42 @@ fun SourceOptionsDialog(
             )
         },
         text = {
-            Text(
-                text = "Choose an action for this video quality",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        confirmButton = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Button(
-                    onClick = { showDownloadOptions = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = androidx.compose.material3.ButtonDefaults.elevatedButtonElevation()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Download,
-                        contentDescription = "Download",
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Download Options")
-                }
-                
-                Button(
+                Text(
+                    text = tr("Choose an action for this video quality"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OptionButton(
+                    text = tr("Play in CCloud"),
+                    icon = Icons.Default.PlayArrow,
+                    style = OptionStyle.MAIN,
                     onClick = { onPlay(source) },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                    ),
-                    elevation = androidx.compose.material3.ButtonDefaults.elevatedButtonElevation()
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play",
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Play in CCloud")
-                }
-                
-                // Cancel button moved to the bottom of the dialog
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text("Cancel")
-                }
+                    modifier = Modifier.focusRequester(playFocus)
+                )
+                OptionButton(
+                    text = tr("Other players & download"),
+                    icon = Icons.Default.Download,
+                    onClick = { showDownloadOptions = true }
+                )
+                OptionButton(
+                    text = tr("Cancel"),
+                    style = OptionStyle.QUIET,
+                    onClick = onDismiss
+                )
             }
         },
+        confirmButton = {},
         containerColor = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(20.dp),
         tonalElevation = 6.dp
     )
 }
-
 
 fun openUrl(context: Context, url: String) {
     DownloadUtils.openUrl(context, url)

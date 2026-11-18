@@ -1,5 +1,7 @@
 package com.pira.ccloud.components
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,7 +51,7 @@ fun GenreFilterSection(
             .padding(vertical = 8.dp)
     ) {
         Text(
-            text = "Filters",
+            text = tr("Filters"),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
@@ -109,7 +111,7 @@ fun FilterTypeSelector(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Sort: ${filterTypeShortLabel(selectedFilterType)}",
+                    text = tr("Sort: %s", filterTypeShortLabel(selectedFilterType)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimary,
                     fontWeight = FontWeight.Bold,
@@ -119,7 +121,7 @@ fun FilterTypeSelector(
                 )
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Filter options",
+                    contentDescription = tr("Filter options"),
                     tint = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.height(16.dp)
                 )
@@ -157,38 +159,38 @@ fun FilterTypeSelector(
 }
 
 private fun filterTypeMenuLabel(filterType: FilterType): String = when (filterType) {
-    FilterType.DEFAULT -> "Default"
-    FilterType.BY_YEAR -> "By Year"
-    FilterType.BY_IMDB -> "By IMDB"
-    FilterType.MOST_POPULAR -> "Most Popular"
-    FilterType.TOP_RATED -> "Top Rated"
-    FilterType.STAR_CAST -> "Famous Actors"
-    FilterType.MOST_AWARDED -> "Most Awards"
-    FilterType.NEWEST -> "Newest Release Date"
-    FilterType.TOP_PICKS -> "Top Picks (Rating + Year)"
-    FilterType.POPULAR_CAST -> "Popular + Actors"
-    FilterType.BEST_OVERALL -> "Best Overall (All)"
+    FilterType.DEFAULT -> tr("Default")
+    FilterType.BY_YEAR -> tr("By Year")
+    FilterType.BY_IMDB -> tr("By IMDB")
+    FilterType.MOST_POPULAR -> tr("Most Popular")
+    FilterType.TOP_RATED -> tr("Top Rated")
+    FilterType.STAR_CAST -> tr("Famous Actors")
+    FilterType.MOST_AWARDED -> tr("Most Awards")
+    FilterType.NEWEST -> tr("Newest Release Date")
+    FilterType.TOP_PICKS -> tr("Top Picks (Rating + Year)")
+    FilterType.POPULAR_CAST -> tr("Popular + Actors")
+    FilterType.BEST_OVERALL -> tr("Best Overall (All)")
 }
 
 // Fits the 150dp sort button
 private fun filterTypeShortLabel(filterType: FilterType): String = when (filterType) {
-    FilterType.DEFAULT -> "Default"
-    FilterType.BY_YEAR -> "By Year"
-    FilterType.BY_IMDB -> "By IMDB"
-    FilterType.MOST_POPULAR -> "Popular"
-    FilterType.TOP_RATED -> "Top Rated"
-    FilterType.STAR_CAST -> "Actors"
-    FilterType.MOST_AWARDED -> "Awards"
-    FilterType.NEWEST -> "Newest"
-    FilterType.TOP_PICKS -> "Top Picks"
-    FilterType.POPULAR_CAST -> "Pop+Actors"
-    FilterType.BEST_OVERALL -> "Best"
+    FilterType.DEFAULT -> tr("Default")
+    FilterType.BY_YEAR -> tr("By Year")
+    FilterType.BY_IMDB -> tr("By IMDB")
+    FilterType.MOST_POPULAR -> tr("Popular")
+    FilterType.TOP_RATED -> tr("Top Rated")
+    FilterType.STAR_CAST -> tr("Actors")
+    FilterType.MOST_AWARDED -> tr("Awards")
+    FilterType.NEWEST -> tr("Newest")
+    FilterType.TOP_PICKS -> tr("Top Picks")
+    FilterType.POPULAR_CAST -> tr("Pop+Actors")
+    FilterType.BEST_OVERALL -> tr("Best")
 }
 
 private fun filterTypeGroup(filterType: FilterType): String = when {
     !filterType.isRanked -> ""
-    filterType in listOf(FilterType.TOP_PICKS, FilterType.POPULAR_CAST, FilterType.BEST_OVERALL) -> "Combined"
-    else -> "Single field"
+    filterType in listOf(FilterType.TOP_PICKS, FilterType.POPULAR_CAST, FilterType.BEST_OVERALL) -> tr("Combined")
+    else -> tr("Single field")
 }
 
 @Composable
@@ -201,9 +203,9 @@ fun GenreSelector(
     
     // Find the selected genre title
     val selectedGenreTitle = if (selectedGenreId == 0) {
-        "All Genres"
+        tr("All Genres")
     } else {
-        genres.find { it.id == selectedGenreId }?.title ?: "All Genres"
+        genres.find { it.id == selectedGenreId }?.title ?: tr("All Genres")
     }
     
     Card(
@@ -235,7 +237,7 @@ fun GenreSelector(
                 )
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
-                    contentDescription = "Genre options",
+                    contentDescription = tr("Genre options"),
                     tint = MaterialTheme.colorScheme.onSecondary,
                     modifier = Modifier.height(16.dp)
                 )
@@ -246,7 +248,7 @@ fun GenreSelector(
                 onDismissRequest = { expanded = false }
             ) {
                 DropdownMenuItem(
-                    text = { Text("All Genres") },
+                    text = { Text(tr("All Genres")) },
                     onClick = {
                         onGenreSelected(0)
                         expanded = false

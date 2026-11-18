@@ -1,5 +1,7 @@
 package com.pira.ccloud.screens
 
+import com.pira.ccloud.utils.tr
+
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Image
@@ -62,12 +64,12 @@ fun AboutScreen(navController: NavController?) {
             IconButton(onClick = { navController?.popBackStack() }) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back"
+                    contentDescription = tr("Back")
                 )
             }
             
             Text(
-                text = stringResource(R.string.about),
+                text = tr(stringResource(R.string.about)),
                 modifier = Modifier
                     .weight(1f)
                     .padding(start = 16.dp)
@@ -89,7 +91,7 @@ fun AboutScreen(navController: NavController?) {
                     .data(R.drawable.splash_logo)
                     .crossfade(true)
                     .build(),
-                contentDescription = "App Logo",
+                contentDescription = tr("App Logo"),
                 modifier = Modifier.size(120.dp)
             )
             
@@ -97,7 +99,7 @@ fun AboutScreen(navController: NavController?) {
             
             // App Name
             Text(
-                text = "CCloud",
+                text = tr("CCloud"),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
@@ -106,7 +108,7 @@ fun AboutScreen(navController: NavController?) {
             
             // App Version and Architecture
             Text(
-                text = "Version ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) - ${getArchitecture()}",
+                text = tr("Version %s", "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}) - ${getArchitecture()}"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -115,7 +117,7 @@ fun AboutScreen(navController: NavController?) {
             
             // Developer Info
             Text(
-                text = "Developed by Hossein Pira",
+                text = tr("Developed by Hossein Pira"),
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center
             )
@@ -129,7 +131,7 @@ fun AboutScreen(navController: NavController?) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Connect with us",
+                        text = tr("Connect with us"),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
@@ -137,7 +139,7 @@ fun AboutScreen(navController: NavController?) {
                     // GitHub Link
                     LinkItem(
                         icon = Icons.Default.Public,
-                        text = "GitHub Repository",
+                        text = tr("GitHub Repository"),
                         url = "https://github.com/code3-dev/CCloud"
                     )
                     
@@ -146,7 +148,7 @@ fun AboutScreen(navController: NavController?) {
                     // Telegram Channel Link
                     LinkItem(
                         icon = Icons.Default.Send,
-                        text = "Telegram Channel",
+                        text = tr("Telegram Channel"),
                         url = "https://t.me/irdevs_dns"
                     )
                     
@@ -155,7 +157,7 @@ fun AboutScreen(navController: NavController?) {
                     // Developer Telegram Link
                     LinkItem(
                         icon = Icons.Default.Send,
-                        text = "Developer Telegram",
+                        text = tr("Developer Telegram"),
                         url = "https://t.me/h3dev"
                     )
                     
@@ -164,7 +166,7 @@ fun AboutScreen(navController: NavController?) {
                     // Developer Email Link
                     LinkItem(
                         icon = Icons.Default.Email,
-                        text = "Developer Email",
+                        text = tr("Developer Email"),
                         url = "h3dev.pira@gmail.com",
                         isEmail = true
                     )
@@ -180,13 +182,13 @@ fun AboutScreen(navController: NavController?) {
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Support Us",
+                        text = tr("Support Us"),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
                     
                     Text(
-                        text = "If you find CCloud useful, consider supporting the development with a donation.",
+                        text = tr("If you find CCloud useful, consider supporting the development with a donation."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 16.dp)
@@ -212,7 +214,7 @@ fun AboutScreen(navController: NavController?) {
             
             // Copyright
             Text(
-                text = "© ${java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)} CCloud. All rights reserved.",
+                text = tr("© %d CCloud. All rights reserved.", java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
@@ -270,7 +272,7 @@ fun LinkItem(
         
         Icon(
             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = "Open link",
+            contentDescription = tr("Open link"),
             modifier = Modifier
                 .size(24.dp)
                 .graphicsLayer(rotationZ = 180f)
@@ -295,7 +297,7 @@ fun DonationItem(
                 clipboard.setPrimaryClip(clip)
                 
                 // Show toast
-                android.widget.Toast.makeText(context, "$coinName address copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, tr("%s address copied to clipboard", coinName), android.widget.Toast.LENGTH_SHORT).show()
             }
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -318,7 +320,7 @@ fun DonationItem(
         
         Icon(
             imageVector = Icons.Default.ContentCopy,
-            contentDescription = "Copy address",
+            contentDescription = tr("Copy address"),
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier.size(24.dp)
         )
@@ -331,10 +333,10 @@ fun getArchitecture(): String {
         val supportedAbis = android.os.Build.SUPPORTED_ABIS
         if (supportedAbis.isNotEmpty()) {
             when (supportedAbis[0]) {
-                "arm64-v8a" -> "ARM64 (arm64-v8a)"
-                "armeabi-v7a" -> "ARM32 (armeabi-v7a)"
-                "x86_64" -> "x86_64"
-                "x86" -> "x86"
+                "arm64-v8a" -> tr("ARM64 (arm64-v8a)")
+                "armeabi-v7a" -> tr("ARM32 (armeabi-v7a)")
+                "x86_64" -> tr("x86_64")
+                "x86" -> tr("x86")
                 else -> "${supportedAbis[0]} (Unknown)"
             }
         } else {

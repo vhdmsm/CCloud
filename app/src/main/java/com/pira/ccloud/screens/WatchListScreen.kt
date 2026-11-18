@@ -1,5 +1,7 @@
 package com.pira.ccloud.screens
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -79,7 +81,7 @@ fun WatchListScreen(status: WatchStatus, navController: NavController, showTitle
         // The phone shows the section's name on its tab instead
         if (showTitle) {
             Text(
-                text = if (status == WatchStatus.WATCHING) "Watching" else "Seen",
+                text = if (status == WatchStatus.WATCHING) tr("Watching") else tr("Seen"),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 8.dp)
@@ -89,9 +91,9 @@ fun WatchListScreen(status: WatchStatus, navController: NavController, showTitle
             Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
                     text = if (status == WatchStatus.WATCHING) {
-                        "Movies and series you start playing show up here."
+                        tr("Movies and series you start playing show up here.")
                     } else {
-                        "Movies you finish, and series whose last episode you finish, show up here."
+                        tr("Movies you finish, and series whose last episode you finish, show up here.")
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -187,7 +189,7 @@ private fun WatchItemCard(
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
                 Text(
-                    text = "${if (item.type == "series") "Series" else "Movie"} • ${item.year}",
+                    text = "${if (item.type == "series") tr("Series") else tr("Movie")} • ${item.year}",
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -201,7 +203,7 @@ private fun WatchItemCard(
                 }
                 resumeAt?.let {
                     Text(
-                        text = "Continue from ${formatTime(it)}",
+                        text = tr("Continue from %s", formatTime(it)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.padding(top = 4.dp)
@@ -210,11 +212,11 @@ private fun WatchItemCard(
             }
             Box {
                 IconButton(onClick = { showMenu = true }) {
-                    Icon(imageVector = Icons.Default.MoreVert, contentDescription = "More options")
+                    Icon(imageVector = Icons.Default.MoreVert, contentDescription = tr("More options"))
                 }
                 DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                     DropdownMenuItem(
-                        text = { Text(if (entry.status == WatchStatus.SEEN) "Move to Watching" else "Mark as seen") },
+                        text = { Text(if (entry.status == WatchStatus.SEEN) tr("Move to Watching") else tr("Mark as seen")) },
                         leadingIcon = {
                             Icon(
                                 imageVector = if (entry.status == WatchStatus.SEEN) Icons.Default.PlayCircle else Icons.Default.CheckCircle,
@@ -227,7 +229,7 @@ private fun WatchItemCard(
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Remove") },
+                        text = { Text(tr("Remove")) },
                         onClick = {
                             showMenu = false
                             onRemove()
