@@ -18,11 +18,11 @@ object DownloadUtils {
 
     fun copyToClipboard(context: Context, text: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-        val clip = android.content.ClipData.newPlainText("Video URL", text)
+        val clip = android.content.ClipData.newPlainText(tr("Video URL"), text)
         clipboard.setPrimaryClip(clip)
         
         // Show a toast or snackbar to indicate success
-        android.widget.Toast.makeText(context, "Link copied to clipboard", android.widget.Toast.LENGTH_SHORT).show()
+        android.widget.Toast.makeText(context, tr("Link copied to clipboard"), android.widget.Toast.LENGTH_SHORT).show()
     }
 
     fun openWithADM(context: Context, url: String) {
@@ -61,11 +61,11 @@ object DownloadUtils {
             
             // If all else fails, show error message
             if (!success) {
-                android.widget.Toast.makeText(context, "ADM is not installed on this device", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(context, tr("ADM is not installed on this device"), android.widget.Toast.LENGTH_LONG).show()
             }
         } catch (e: Exception) {
             // If ADM is not installed, show error message
-            android.widget.Toast.makeText(context, "ADM is not installed on this device", android.widget.Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(context, tr("ADM is not installed on this device"), android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
@@ -77,7 +77,7 @@ object DownloadUtils {
             context.startActivity(intent)
         } catch (e: Exception) {
             // If VLC is not installed, show a message
-            android.widget.Toast.makeText(context, "VLC Player not installed", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, tr("VLC Player not installed"), android.widget.Toast.LENGTH_SHORT).show()
         }
     }
     
@@ -96,7 +96,7 @@ object DownloadUtils {
                 context.startActivity(intent)
             } catch (e2: Exception) {
                 // If MX Player is not installed, show a message
-                android.widget.Toast.makeText(context, "MX Player not installed", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, tr("MX Player not installed"), android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -133,7 +133,7 @@ object DownloadUtils {
                 success = true
             } catch (e: Exception) {
                 // If all else fails, show error message
-                android.widget.Toast.makeText(context, "KM Player not installed", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, tr("KM Player not installed"), android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }

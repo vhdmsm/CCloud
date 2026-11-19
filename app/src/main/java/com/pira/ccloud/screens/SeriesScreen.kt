@@ -1,5 +1,7 @@
 package com.pira.ccloud.screens
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -173,7 +175,7 @@ fun LoadingScreenSeries() {
     ) {
         // Add a title while loading
         Text(
-            text = "Loading Series...",
+            text = tr("Loading Series..."),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.padding(16.dp),
@@ -480,7 +482,7 @@ fun SeriesItem(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Star,
-                            contentDescription = "Rating",
+                            contentDescription = tr("Rating"),
                             tint = Color.Yellow,
                             modifier = Modifier.size(16.dp)
                         )
@@ -548,7 +550,7 @@ fun ErrorScreenSeries(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = "Failed to load series",
+            text = tr("Failed to load series"),
             style = MaterialTheme.typography.headlineSmall,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(bottom = 8.dp)
@@ -567,11 +569,11 @@ fun ErrorScreenSeries(
         ) {
             Icon(
                 imageVector = Icons.Default.Refresh,
-                contentDescription = "Retry",
+                contentDescription = tr("Retry"),
                 modifier = Modifier.size(16.dp)
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Retry")
+            Text(tr("Retry"))
         }
     }
 }
@@ -598,7 +600,7 @@ fun ErrorItemSeries(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                text = "Failed to load more series",
+                text = tr("Failed to load more series"),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 modifier = Modifier.padding(bottom = 8.dp)
@@ -620,11 +622,11 @@ fun ErrorItemSeries(
             ) {
                 Icon(
                     imageVector = Icons.Default.Refresh,
-                    contentDescription = "Retry",
+                    contentDescription = tr("Retry"),
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("Retry")
+                Text(tr("Retry"))
             }
         }
     }

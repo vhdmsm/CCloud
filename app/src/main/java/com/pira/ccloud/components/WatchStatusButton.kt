@@ -1,5 +1,7 @@
 package com.pira.ccloud.components
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -42,28 +44,28 @@ fun WatchStatusButton(item: FavoriteItem, modifier: Modifier = Modifier) {
             onClick = {
                 WatchHistory.remove(context, item.id, item.type)
                 status = null
-                android.widget.Toast.makeText(context, "Removed from Seen", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, tr("Removed from Seen"), android.widget.Toast.LENGTH_SHORT).show()
             },
             shape = shape,
             modifier = modifier.focusHighlight(shape = shape, focusedScale = 1.03f)
         ) {
             Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Seen")
+            Text(tr("Seen"))
         }
     } else {
         OutlinedButton(
             onClick = {
                 WatchHistory.markSeen(context, item)
                 status = WatchStatus.SEEN
-                android.widget.Toast.makeText(context, "Added to Seen", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, tr("Added to Seen"), android.widget.Toast.LENGTH_SHORT).show()
             },
             shape = shape,
             modifier = modifier.focusHighlight(shape = shape, focusedScale = 1.03f)
         ) {
             Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("Mark as seen")
+            Text(tr("Mark as seen"))
         }
     }
 }

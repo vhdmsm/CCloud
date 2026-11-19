@@ -1,5 +1,7 @@
 package com.pira.ccloud.screens
 
+import com.pira.ccloud.utils.tr
+
 import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -110,7 +112,7 @@ fun SearchScreen(
                 },
             placeholder = { 
                 Text(
-                    text = "Search movies and series...",
+                    text = tr("Search movies and series..."),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 ) 
             },
@@ -124,7 +126,7 @@ fun SearchScreen(
                 }) {
                     Icon(
                         imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
+                        contentDescription = tr("Search"),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -137,7 +139,7 @@ fun SearchScreen(
                     }) {
                         Icon(
                             imageVector = Icons.Default.Clear,
-                            contentDescription = "Clear",
+                            contentDescription = tr("Clear"),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -224,13 +226,13 @@ fun SearchScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "Error: ${viewModel.errorMessage}",
+                            text = tr("Error: %s", viewModel.errorMessage),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.error
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Please try again",
+                            text = tr("Please try again"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -239,7 +241,7 @@ fun SearchScreen(
                             onClick = { viewModel.triggerSearch() },
                             modifier = Modifier.padding(16.dp)
                         ) {
-                            Text("Retry")
+                            Text(tr("Retry"))
                         }
                     }
                 }
@@ -258,7 +260,7 @@ fun SearchScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "No results found",
+                        text = tr("No results found"),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -275,19 +277,19 @@ fun SearchScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Search,
-                            contentDescription = "Search",
+                            contentDescription = tr("Search"),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Search for movies and series",
+                            text = tr("Search for movies and series"),
                             style = MaterialTheme.typography.headlineSmall,
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Enter a keyword to start searching",
+                            text = tr("Enter a keyword to start searching"),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -429,7 +431,7 @@ fun PosterItem(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Star,
-                            contentDescription = "Rating",
+                            contentDescription = tr("Rating"),
                             tint = Color.Yellow,
                             modifier = Modifier.size(16.dp)
                         )
@@ -461,7 +463,7 @@ fun PosterItem(
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = if (poster.isMovie()) "Movie" else "Series",
+                            text = if (poster.isMovie()) tr("Movie") else tr("Series"),
                             style = MaterialTheme.typography.bodySmall,
                             color = if (poster.isMovie()) {
                                 MaterialTheme.colorScheme.onPrimary

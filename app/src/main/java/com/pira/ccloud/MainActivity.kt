@@ -56,10 +56,13 @@ import com.pira.ccloud.ui.theme.ThemeSettings
 import com.pira.ccloud.utils.StorageUtils
 import com.pira.ccloud.data.model.FontSettings
 import com.pira.ccloud.utils.DeviceUtils
+import com.pira.ccloud.utils.AppLanguage
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // English or Persian, as chosen in Settings (or the device's language)
+        AppLanguage.init(this)
         // On-device caches of OMDb and Watchmode answers, to save their limited requests
         OmdbClient.init(this)
         WatchmodeClient.init(this)

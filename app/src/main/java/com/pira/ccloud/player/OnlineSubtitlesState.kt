@@ -1,5 +1,7 @@
 package com.pira.ccloud.player
 
+import com.pira.ccloud.utils.tr
+
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,7 +43,7 @@ class OnlineSubtitlesState(
                 val hash = OpenSubtitlesClient.movieHash(videoUrl)
                 results = OpenSubtitlesClient.search(release, hash)
                 if (results.isEmpty()) {
-                    message = "No English subtitles found for \"${release.title}\""
+                    message = tr("No English subtitles found for \"%s\"", release.title)
                 }
             } catch (e: Exception) {
                 message = errorMessage(e)
@@ -61,7 +63,7 @@ class OnlineSubtitlesState(
                 val saved = store.save(download.text, result.release)
                 subtitle = saved
                 results = emptyList()
-                message = "Added." + (download.remaining?.let { " Downloads left today: $it" } ?: "")
+                message = tr("Added.") + (download.remaining?.let { tr(" Downloads left today: %d", it) } ?: "")
                 onSubtitleChanged(saved)
             } catch (e: Exception) {
                 message = errorMessage(e)

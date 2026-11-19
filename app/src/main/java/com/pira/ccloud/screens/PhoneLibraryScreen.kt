@@ -1,5 +1,7 @@
 package com.pira.ccloud.screens
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,7 +35,7 @@ fun PhoneLibraryScreen(navController: NavController) {
                 Tab(
                     selected = selected == index,
                     onClick = { selected = index },
-                    text = { Text(stringResource(title)) }
+                    text = { Text(tr(stringResource(title))) }
                 )
             }
         }

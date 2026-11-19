@@ -1,5 +1,7 @@
 package com.pira.ccloud.navigation
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -85,14 +87,14 @@ fun BottomNavigationBar(navController: NavController) {
                             }
                             Icon(
                                 imageVector = screen.icon ?: Icons.Default.Movie, // Provide a fallback icon
-                                contentDescription = stringResource(screen.resourceId),
+                                contentDescription = tr(stringResource(screen.resourceId)),
                                 tint = iconColor,
                                 modifier = Modifier.size(24.dp)
                             )
                         }
                         // Spacer(modifier = Modifier.height(1.dp))
                         Text(
-                            text = stringResource(screen.resourceId),
+                            text = tr(stringResource(screen.resourceId)),
                             color = textColor,
                             fontSize = androidx.compose.material3.MaterialTheme.typography.labelMedium.fontSize,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,

@@ -1,5 +1,7 @@
 package com.pira.ccloud.components
 
+import com.pira.ccloud.utils.tr
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -45,7 +47,7 @@ fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: 
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         Text(
-            text = "Awards & Scores",
+            text = tr("Awards & Scores"),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
@@ -54,50 +56,50 @@ fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: 
         val data = insight
         if (data == null) {
             Text(
-                text = "Loading…",
+                text = tr("Loading…"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
             val info = data.facts.info
             val rating = data.facts.rating
-            ScoreRow("Awards", awardsText(data.facts.awards, data.awardsFromDescription))
-            data.releaseDate?.let { ScoreRow("Release date", it) }
+            ScoreRow(tr("Awards"), awardsText(data.facts.awards, data.awardsFromDescription))
+            data.releaseDate?.let { ScoreRow(tr("Release date"), it) }
             ScoreRow(
-                "IMDB",
+                tr("IMDB"),
                 when {
                     rating != null -> format(
-                        "%.1f from %,d votes (OMDb)\n(Top Rated score %.2f, trusted %d%%)",
+                        tr("%.1f from %,d votes (OMDb)\n(Top Rated score %.2f, trusted %d%%)"),
                         rating.imdb, rating.votes, data.topRated, (MovieRanking.ratingConfidence(data.facts) * 100).toInt()
                     )
                     movie.imdb > 0 -> format(
-                        "%.1f (the site's, may be old)\n(Top Rated score %.2f, trusted %d%%)",
+                        tr("%.1f (the site's, may be old)\n(Top Rated score %.2f, trusted %d%%)"),
                         movie.imdb, data.topRated, (MovieRanking.ratingConfidence(data.facts) * 100).toInt()
                     )
                     else -> "—"
                 }
             )
             if (info != null) {
-                ScoreRow("Popularity", percentileText(info.popularityPercentile) + format("  (score %.2f)", info.popularity))
-                ScoreRow("How well known", percentileText(info.relevancePercentile) + format("  (score %.2f)", info.reach))
+                ScoreRow(tr("Popularity"), percentileText(info.popularityPercentile) + format(tr("  (score %.2f)"), info.popularity))
+                ScoreRow(tr("How well known"), percentileText(info.relevancePercentile) + format(tr("  (score %.2f)"), info.reach))
                 if (info.actors.isNotEmpty()) {
                     ScoreRow(
-                        "Lead actors",
+                        tr("Lead actors"),
                         info.actors.joinToString("\n") { "${it.name}: ${percentileText(it.percentile)}" } +
-                            format("\n(score %.2f)", info.castPopularity ?: 0.0)
+                            format(tr("\n(score %.2f)"), info.castPopularity ?: 0.0)
                     )
                 }
             }
             val parts = data.bestOverall
             ScoreRow(
-                "Best Overall",
+                tr("Best Overall"),
                 format(
-                    "%.2f = rating %.2f + awards %.2f + popularity %.2f + actors %.2f",
+                    tr("%.2f = rating %.2f + awards %.2f + popularity %.2f + actors %.2f"),
                     parts.total, parts.rating, parts.awards, parts.popularity, parts.actors
                 ) + when {
                     !parts.awardsSpread -> ""
-                    series -> "\n(recent: the awards' share is spread over rating, popularity and actors)"
-                    else -> "\n(recent: the awards' share is spread over rating, popularity and actors, and its awards are added on top)"
+                    series -> tr("\n(recent: the awards' share is spread over rating, popularity and actors)")
+                    else -> tr("\n(recent: the awards' share is spread over rating, popularity and actors, and its awards are added on top)")
                 }
             )
             if (series) {
@@ -106,23 +108,23 @@ fun MovieScoresSection(movie: Movie, insight: MovieInsights.Insight?, modifier: 
                 val startYear = MovieRanking.startYearScore(movie.year, currentYear)
                 val weight = MovieRanking.SERIES_START_YEAR_WEIGHT
                 ScoreRow(
-                    "Series rank",
+                    tr("Series rank"),
                     format(
-                        "%.2f = %.2f × Best Overall %.2f + %.2f × start year %.2f",
+                        tr("%.2f = %.2f × Best Overall %.2f + %.2f × start year %.2f"),
                         (1 - weight) * parts.total + weight * startYear, 1 - weight, parts.total, weight, startYear
-                    ) + "\n(started ${movie.year}: ${MovieRanking.SERIES_MIN_START_YEAR} counts 0, $currentYear counts 1)"
+                    ) + tr("\n(started %s: %d counts 0, %d counts 1)", movie.year, MovieRanking.SERIES_MIN_START_YEAR, currentYear)
                 )
             }
             if (data.incomplete) {
                 Text(
-                    text = "Some data isn't available right now (monthly limit, no connection or no key)",
+                    text = tr("Some data isn't available right now (monthly limit, no connection or no key)"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             if (info != null) {
                 Text(
-                    text = "Movie data from Watchmode",
+                    text = tr("Movie data from Watchmode"),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -152,24 +154,24 @@ private fun ScoreRow(label: String, value: String) {
 }
 
 private fun awardsText(awards: OmdbClient.Awards?, fromDescription: Boolean): String {
-    if (awards == null) return "None found"
-    if (awards.summary.isNotEmpty()) return awards.summary + "  (OMDb)"
+    if (awards == null) return tr("None found")
+    if (awards.summary.isNotEmpty()) return awards.summary + tr("  (OMDb)")
     val otherWins = awards.wins - awards.oscarWins
     val otherNominations = awards.nominations - awards.oscarNominations
     val parts = listOfNotNull(
-        awards.oscarWins.takeIf { it > 0 }?.let { "Won $it Oscar" + if (it > 1) "s" else "" },
-        awards.oscarNominations.takeIf { it > 0 }?.let { "$it Oscar nomination" + if (it > 1) "s" else "" },
-        otherWins.takeIf { it > 0 }?.let { "$it other win" + if (it > 1) "s" else "" },
-        otherNominations.takeIf { it > 0 }?.let { "$it other nomination" + if (it > 1) "s" else "" }
+        awards.oscarWins.takeIf { it > 0 }?.let { if (it > 1) tr("Won %d Oscars", it) else tr("Won 1 Oscar") },
+        awards.oscarNominations.takeIf { it > 0 }?.let { if (it > 1) tr("%d Oscar nominations", it) else tr("1 Oscar nomination") },
+        otherWins.takeIf { it > 0 }?.let { if (it > 1) tr("%d other wins", it) else tr("1 other win") },
+        otherNominations.takeIf { it > 0 }?.let { if (it > 1) tr("%d other nominations", it) else tr("1 other nomination") }
     )
-    if (parts.isEmpty()) return "None found"
-    return parts.joinToString(" · ") + if (fromDescription) "  (description)" else "  (OMDb)"
+    if (parts.isEmpty()) return tr("None found")
+    return parts.joinToString(" · ") + if (fromDescription) tr("  (description)") else tr("  (OMDb)")
 }
 
 // Watchmode's percentile out of 100 (100 = the very top), with the decimals that matter near the top
 private fun percentileText(percentile: Double): String = when {
     percentile <= 0.0 -> "—"
-    percentile >= 100.0 -> "100 / 100 (the very top)"
+    percentile >= 100.0 -> tr("100 / 100 (the very top)")
     percentile >= 99.0 -> format("%.3f / 100", percentile)
     else -> format("%.1f / 100", percentile)
 }

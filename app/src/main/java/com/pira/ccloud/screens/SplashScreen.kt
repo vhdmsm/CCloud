@@ -1,5 +1,7 @@
 package com.pira.ccloud.screens
 
+import com.pira.ccloud.utils.tr
+
 import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -99,14 +101,14 @@ fun SplashScreen(
                     .data(R.drawable.splash_logo)
                     .crossfade(true)
                     .build(),
-                contentDescription = "App Logo",
+                contentDescription = tr("App Logo"),
                 modifier = Modifier.size(120.dp)
             )
             
             Spacer(modifier = Modifier.height(32.dp))
             
             Text(
-                text = "CCloud",
+                text = tr("CCloud"),
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 fontSize = 32.sp,
@@ -117,7 +119,7 @@ fun SplashScreen(
             Spacer(modifier = Modifier.height(8.dp))
             
             Text(
-                text = "Version ${BuildConfig.VERSION_NAME ?: "1.0"}",
+                text = tr("Version %s", BuildConfig.VERSION_NAME ?: "1.0"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center
@@ -126,7 +128,7 @@ fun SplashScreen(
             Spacer(modifier = Modifier.height(4.dp))
             
             Text(
-                text = "Developed by Hossein Pira",
+                text = tr("Developed by Hossein Pira"),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center
@@ -144,10 +146,10 @@ fun WelcomeSliderScreen(
 ) {
     // Welcome slides data
     val slides = listOf(
-        SlideData(R.drawable.s1, "Welcome to CCloud"),
-        SlideData(R.drawable.s2, "Free & Fast"),
-        SlideData(R.drawable.s3, "No Login Required"),
-        SlideData(R.drawable.s4, "For Iranian Users")
+        SlideData(R.drawable.s1, tr("Welcome to CCloud")),
+        SlideData(R.drawable.s2, tr("Free & Fast")),
+        SlideData(R.drawable.s3, tr("No Login Required")),
+        SlideData(R.drawable.s4, tr("For Iranian Users"))
     )
     
     Box(
@@ -207,10 +209,10 @@ fun WelcomeSliderScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Previous"
+                            contentDescription = tr("Previous")
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Previous")
+                        Text(tr("Previous"))
                     }
                 } else {
                     Spacer(modifier = Modifier.size(1.dp))
@@ -231,14 +233,14 @@ fun WelcomeSliderScreen(
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Text(
-                        text = if (currentSlide < 3) "Next" else "Get Started",
+                        text = if (currentSlide < 3) tr("Next") else tr("Get Started"),
                         color = Color.Black,
                         fontWeight = FontWeight.Bold
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Icon(
                         imageVector = Icons.Default.ArrowForward,
-                        contentDescription = if (currentSlide < 3) "Next" else "Get Started",
+                        contentDescription = if (currentSlide < 3) tr("Next") else tr("Get Started"),
                         tint = Color.Black
                     )
                 }

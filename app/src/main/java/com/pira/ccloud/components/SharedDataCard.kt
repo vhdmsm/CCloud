@@ -1,5 +1,7 @@
 package com.pira.ccloud.components
 
+import com.pira.ccloud.utils.tr
+
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
@@ -58,7 +60,7 @@ fun SharedDataCard() {
     var signInJob by remember { mutableStateOf<Job?>(null) }
     var signInError by remember { mutableStateOf<String?>(null) }
 
-    fun ago(time: Long) = if (time <= 0) "never" else DateUtils.getRelativeTimeSpanString(time).toString()
+    fun ago(time: Long) = if (time <= 0) tr("never") else DateUtils.getRelativeTimeSpanString(time).toString()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -76,24 +78,22 @@ fun SharedDataCard() {
                     modifier = Modifier.size(24.dp)
                 )
                 Text(
-                    text = "Shared Movie Data",
+                    text = tr("Shared Movie Data"),
                     style = MaterialTheme.typography.titleLarge,
                     modifier = Modifier.padding(start = 8.dp)
                 )
             }
             Text(
                 text = if (MetadataSnapshot.canPublish) {
-                    "Ratings, popularity and awards already fetched are downloaded from a shared copy, " +
-                        "so the ranked sorts need fewer API requests."
+                    tr("Ratings, popularity and awards already fetched are downloaded from a shared copy, so the ranked sorts need fewer API requests.")
                 } else {
-                    "The ranked sorts use a shared copy of ratings, popularity and awards, downloaded " +
-                        "automatically every few hours. Movies not in it yet are ranked by IMDB score."
+                    tr("The ranked sorts use a shared copy of ratings, popularity and awards, downloaded automatically every few hours. Movies not in it yet are ranked by IMDB score.")
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                text = "Shared copy from ${ago(snapshotTime)}",
+                text = tr("Shared copy from %s", ago(snapshotTime)),
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 8.dp)
             )
@@ -107,14 +107,14 @@ fun SharedDataCard() {
                             busy = false
                             snapshotTime = MetadataSnapshot.snapshotTime
                             val text = result.fold(
-                                { "Took $it newer answers" },
-                                { "Couldn't download: ${it.message}" }
+                                { tr("Took %d newer answers", it) },
+                                { tr("Couldn't download: %s", it.message) }
                             )
                             Toast.makeText(context, text, Toast.LENGTH_SHORT).show()
                         }
                     },
                     modifier = Modifier.focusHighlight()
-                ) { Text("Download now") }
+                ) { Text(tr("Download now")) }
                 // Only the owner's build (with API keys) fetches data, so only it can share some
                 if (MetadataSnapshot.canPublish && !hasToken && signInCode == null) {
                     TextButton(
@@ -131,18 +131,18 @@ fun SharedDataCard() {
                                     val tokens = GitHubDeviceLogin.awaitTokens(code)
                                     MetadataSnapshot.setToken(context, tokens.accessToken, tokens.refreshToken, tokens.expiresAt)
                                     hasToken = true
-                                    Toast.makeText(context, "Signed in: this device now shares its data", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, tr("Signed in: this device now shares its data"), Toast.LENGTH_SHORT).show()
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
-                                    signInError = e.message ?: "Sign-in failed"
+                                    signInError = e.message ?: tr("Sign-in failed")
                                 } finally {
                                     signInCode = null
                                 }
                             }
                         },
                         modifier = Modifier.focusHighlight()
-                    ) { Text("I share the data") }
+                    ) { Text(tr("I share the data")) }
                 }
             }
 
@@ -160,7 +160,7 @@ fun SharedDataCard() {
                     modifier = Modifier.padding(top = 4.dp)
                 )
                 Text(
-                    text = "Then approve CCloud. This page continues by itself.",
+                    text = tr("Then approve CCloud. This page continues by itself."),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -171,7 +171,7 @@ fun SharedDataCard() {
                             signInCode = null
                         },
                         modifier = Modifier.focusHighlight()
-                    ) { Text("Cancel") }
+                    ) { Text(tr("Cancel")) }
                     TextButton(
                         onClick = {
                             signInJob?.cancel()
@@ -179,7 +179,7 @@ fun SharedDataCard() {
                             showTokenField = true
                         },
                         modifier = Modifier.focusHighlight()
-                    ) { Text("Paste a token instead") }
+                    ) { Text(tr("Paste a token instead")) }
                 }
             }
             signInError?.let {
@@ -194,8 +194,7 @@ fun SharedDataCard() {
             // Or a GitHub token typed in (e.g. on a phone), with write access to the repository
             if (showTokenField && !hasToken) {
                 Text(
-                    text = "A GitHub token that can write to ${MetadataSnapshot.repo} (a fine-grained token for that " +
-                        "repository with Contents: read and write). It stays on this device.",
+                    text = tr("A GitHub token that can write to %s (a fine-grained token for that repository with Contents: read and write). It stays on this device.", MetadataSnapshot.repo),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
@@ -203,7 +202,7 @@ fun SharedDataCard() {
                 OutlinedTextField(
                     value = token,
                     onValueChange = { token = it.trim() },
-                    label = { Text("GitHub token") },
+                    label = { Text(tr("GitHub token")) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -218,7 +217,7 @@ fun SharedDataCard() {
                         showTokenField = false
                     },
                     modifier = Modifier.padding(top = 8.dp).focusHighlight()
-                ) { Text("Save token") }
+                ) { Text(tr("Save token")) }
             }
             if (hasToken && MetadataSnapshot.canPublish) {
                 Row(
@@ -226,10 +225,9 @@ fun SharedDataCard() {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Share this device's data", style = MaterialTheme.typography.bodyLarge)
+                        Text(tr("Share this device's data"), style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            text = "Uploads when the app opens or closes, after new data was fetched. " +
-                                "Last upload: ${ago(lastPublish)}",
+                            text = tr("Uploads when the app opens or closes, after new data was fetched. Last upload: %s", ago(lastPublish)),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -253,21 +251,21 @@ fun SharedDataCard() {
                                 busy = false
                                 lastPublish = MetadataSnapshot.lastPublish
                                 val text = result.fold(
-                                    { "Uploaded $it answers" },
-                                    { "Couldn't upload: ${it.message}" }
+                                    { tr("Uploaded %d answers", it) },
+                                    { tr("Couldn't upload: %s", it.message) }
                                 )
                                 Toast.makeText(context, text, Toast.LENGTH_LONG).show()
                             }
                         },
                         modifier = Modifier.focusHighlight()
-                    ) { Text("Upload now") }
+                    ) { Text(tr("Upload now")) }
                     TextButton(
                         onClick = {
                             MetadataSnapshot.setToken(context, null)
                             hasToken = false
                         },
                         modifier = Modifier.focusHighlight()
-                    ) { Text("Sign out") }
+                    ) { Text(tr("Sign out")) }
                 }
             }
         }

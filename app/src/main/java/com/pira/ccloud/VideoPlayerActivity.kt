@@ -1,5 +1,8 @@
 package com.pira.ccloud
 
+import com.pira.ccloud.utils.tr
+import com.pira.ccloud.utils.AppLanguage
+
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -219,6 +222,7 @@ class VideoPlayerActivity : ComponentActivity() {
     
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppLanguage.init(this)
         
         // Set fullscreen landscape mode
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -652,7 +656,7 @@ fun VideoPlayerScreen(
         val newMode = subtitleConfig.mode.next()
         updateSubtitleConfig(subtitleConfig.copy(mode = newMode))
         val available = currentTracks.isEmpty || isSubtitleModeAvailable(newMode, currentTracks, subtitleConfig, trackSelector)
-        subtitleMessage = "Subtitles: ${newMode.label}" + if (available) "" else " (not found in this video)"
+        subtitleMessage = tr("Subtitles: %s", tr(newMode.label)) + if (available) "" else tr(" (not found in this video)")
     }
     
     // Seek from the remote; like the double tap, buffering after the seek must not pause playback
@@ -1095,7 +1099,7 @@ fun VideoPlayerScreen(
         if (resumePositionMs != null) {
             // Also the position a retry after an early error goes back to
             currentPosition = resumePositionMs
-            subtitleMessage = "Continuing from ${formatTime(resumePositionMs)}"
+            subtitleMessage = tr("Continuing from %s", formatTime(resumePositionMs))
         }
     }
 
@@ -1189,7 +1193,7 @@ fun VideoPlayerScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "Initializing player...",
+                    text = tr("Initializing player..."),
                     color = Color.White,
                     modifier = Modifier.padding(16.dp)
                 )
@@ -1284,7 +1288,7 @@ fun VideoPlayerScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Replay,
-                        contentDescription = "Rewind ${videoPlayerSettings.seekTimeSeconds} seconds",
+                        contentDescription = tr("Rewind %d seconds", videoPlayerSettings.seekTimeSeconds),
                         tint = Color.White,
                         modifier = Modifier.size(64.dp)
                     )
@@ -1310,7 +1314,7 @@ fun VideoPlayerScreen(
                 ) {
                     Icon(
                         imageVector = Icons.Default.Forward,
-                        contentDescription = "Forward ${videoPlayerSettings.seekTimeSeconds} seconds",
+                        contentDescription = tr("Forward %d seconds", videoPlayerSettings.seekTimeSeconds),
                         tint = Color.White,
                         modifier = Modifier.size(64.dp)
                     )
@@ -1349,7 +1353,7 @@ fun VideoPlayerScreen(
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = tr("Back"),
                             tint = Color.White
                         )
                     }
@@ -1369,7 +1373,7 @@ fun VideoPlayerScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
-                            contentDescription = "Settings",
+                            contentDescription = tr("Settings"),
                             tint = Color.White
                         )
                     }
@@ -1394,7 +1398,7 @@ fun VideoPlayerScreen(
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "Pause" else "Play",
+                            contentDescription = if (isPlaying) tr("Pause") else tr("Play"),
                             tint = Color.White,
                             modifier = Modifier.size(32.dp)
                         )
@@ -1481,7 +1485,7 @@ fun VideoPlayerScreen(
                         // Retry button when there's an error
                         if (isRetrying) {
                             Text(
-                                text = "Retrying...",
+                                text = tr("Retrying..."),
                                 color = Color.White,
                                 style = MaterialTheme.typography.bodySmall,
                                 modifier = Modifier
@@ -1529,7 +1533,7 @@ fun VideoPlayerScreen(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Speed,
-                                        contentDescription = "Playback speed",
+                                        contentDescription = tr("Playback speed"),
                                         tint = Color.White,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -1571,7 +1575,7 @@ fun VideoPlayerScreen(
                             
                             // Normal speed button
                             Text(
-                                text = "Normal",
+                                text = tr("Normal"),
                                 color = if (playbackSpeed == 1.0f) MaterialTheme.colorScheme.primary else Color.White,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = if (playbackSpeed == 1.0f) FontWeight.Bold else FontWeight.Normal,
@@ -1634,10 +1638,10 @@ fun TrackSelectionDialog(
             (0 until group.length).firstOrNull { group.isTrackSelected(it) }?.let { index ->
                 val format = group.getTrackFormat(index)
                 format.language?.let { 
-                    if (it.isNotEmpty()) it else format.label ?: "Track $index"
-                } ?: format.label ?: "Track $index"
+                    if (it.isNotEmpty()) it else format.label ?: tr("Track %d", index)
+                } ?: format.label ?: tr("Track %d", index)
             }
-        } ?: "None"
+        } ?: tr("None")
     }
     
     AlertDialog(
@@ -1649,7 +1653,7 @@ fun TrackSelectionDialog(
             .widthIn(max = 720.dp),
         title = {
             Text(
-                text = "Track Selection",
+                text = tr("Track Selection"),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -1662,7 +1666,7 @@ fun TrackSelectionDialog(
             ) {
                 // Subtitle display mode
                 Text(
-                    text = "Subtitles",
+                    text = tr("Subtitles"),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(bottom = 8.dp)
@@ -1686,9 +1690,9 @@ fun TrackSelectionDialog(
                 // Which subtitle tracks the file contains
                 Text(
                     text = if (subtitleTracks.isEmpty()) {
-                        "No subtitle tracks in this video"
+                        tr("No subtitle tracks in this video")
                     } else {
-                        "In this video: " + subtitleTracks.joinToString(", ") { it.name }
+                        tr("In this video: ") + subtitleTracks.joinToString(", ") { it.name }
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1699,7 +1703,7 @@ fun TrackSelectionDialog(
                     // Manual track choice, for files whose tracks are unlabeled or mislabeled
                     if (subtitleConfig.mode == SubtitleMode.PERSIAN || subtitleConfig.mode == SubtitleMode.BOTH) {
                         SubtitleTrackPicker(
-                            title = "Persian track",
+                            title = tr("Persian track"),
                             options = subtitleTracks,
                             selectedKey = subtitleConfig.persianTrackKey,
                             playingTrack = subtitleTracks.firstOrNull { it.isSelected && !it.isSecondary },
@@ -1708,7 +1712,7 @@ fun TrackSelectionDialog(
                     }
                     if (subtitleConfig.mode == SubtitleMode.ENGLISH || subtitleConfig.mode == SubtitleMode.BOTH) {
                         SubtitleTrackPicker(
-                            title = "English track",
+                            title = tr("English track"),
                             options = subtitleTracks,
                             selectedKey = subtitleConfig.englishTrackKey,
                             playingTrack = subtitleTracks.firstOrNull {
@@ -1730,7 +1734,7 @@ fun TrackSelectionDialog(
                 if (audioTrackGroups.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(16.dp))
                     Text(
-                        text = "Audio Tracks",
+                        text = tr("Audio Tracks"),
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.padding(bottom = 8.dp)
@@ -1759,7 +1763,7 @@ fun TrackSelectionDialog(
                             )
                             Icon(
                                 imageVector = Icons.Default.ArrowDropDown,
-                                contentDescription = "Expand audio tracks",
+                                contentDescription = tr("Expand audio tracks"),
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
@@ -1773,7 +1777,7 @@ fun TrackSelectionDialog(
                             DropdownMenuItem(
                                 text = {
                                     Text(
-                                        text = "None",
+                                        text = tr("None"),
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.onSurface
                                     )
@@ -1792,8 +1796,8 @@ fun TrackSelectionDialog(
                                 for (i in 0 until trackGroup.length) {
                                     val format = trackGroup.getTrackFormat(i)
                                     val trackName = format.language?.let { 
-                                        if (it.isNotEmpty()) it else format.label ?: "Track ${groupIndex + 1}.${i + 1}"
-                                    } ?: format.label ?: "Track ${groupIndex + 1}.${i + 1}"
+                                        if (it.isNotEmpty()) it else format.label ?: tr("Track %s", "${groupIndex + 1}.${i + 1}")
+                                    } ?: format.label ?: tr("Track %s", "${groupIndex + 1}.${i + 1}")
                                     
                                     DropdownMenuItem(
                                         text = {
@@ -1823,7 +1827,7 @@ fun TrackSelectionDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close", color = MaterialTheme.colorScheme.primary)
+                Text(tr("Close"), color = MaterialTheme.colorScheme.primary)
             }
         }
     )
@@ -1941,13 +1945,13 @@ private fun SubtitleModeOption(
         )
         Column(modifier = Modifier.padding(start = 8.dp)) {
             Text(
-                text = mode.label,
+                text = tr(mode.label),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurface
             )
             if (!isAvailable) {
                 Text(
-                    text = "Not in this video",
+                    text = tr("Not in this video"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1965,7 +1969,7 @@ private fun SubtitleTrackPicker(
     onSelect: (String?) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    val autoLabel = "Automatic" + (playingTrack?.let { " (${it.name})" } ?: "")
+    val autoLabel = tr("Automatic") + (playingTrack?.let { " (${it.name})" } ?: "")
     val currentLabel = options.firstOrNull { it.key == selectedKey }?.name ?: autoLabel
     
     Text(
@@ -1998,7 +2002,7 @@ private fun SubtitleTrackPicker(
             )
             Icon(
                 imageVector = Icons.Default.ArrowDropDown,
-                contentDescription = "Choose $title",
+                contentDescription = tr("Choose %s", title),
                 tint = MaterialTheme.colorScheme.onSurface
             )
         }
@@ -2042,7 +2046,7 @@ private fun SubtitleTrackPicker(
 @Composable
 private fun OnlineSubtitlesSection(state: OnlineSubtitlesState) {
     Text(
-        text = "English subtitle online (OpenSubtitles)",
+        text = tr("English subtitle online (OpenSubtitles)"),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)
@@ -2056,15 +2060,15 @@ private fun OnlineSubtitlesSection(state: OnlineSubtitlesState) {
         )
         // Timing correction, for a subtitle that is a little early or late
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = { state.shift(-500) }) { Text("Earlier") }
+            TextButton(onClick = { state.shift(-500) }) { Text(tr("Earlier")) }
             Text(
                 text = String.format("%+.1fs", subtitle.offsetMs / 1000f),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
-            TextButton(onClick = { state.shift(500) }) { Text("Later") }
+            TextButton(onClick = { state.shift(500) }) { Text(tr("Later")) }
             Spacer(modifier = Modifier.weight(1f))
-            TextButton(onClick = { state.remove() }) { Text("Remove") }
+            TextButton(onClick = { state.remove() }) { Text(tr("Remove")) }
         }
     }
 
@@ -2072,7 +2076,7 @@ private fun OnlineSubtitlesSection(state: OnlineSubtitlesState) {
         onClick = { state.search() },
         enabled = !state.isBusy
     ) {
-        Text(if (state.subtitle == null) "Search online" else "Find another")
+        Text(if (state.subtitle == null) tr("Search online") else tr("Find another"))
     }
 
     if (state.isBusy) {
@@ -2099,8 +2103,8 @@ private fun OnlineSubtitlesSection(state: OnlineSubtitlesState) {
             )
             Text(
                 text = buildString {
-                    if (result.matchesFile) append("✓ Made for this file · ")
-                    append("${result.downloadCount} downloads")
+                    if (result.matchesFile) append(tr("✓ Made for this file · "))
+                    append(tr("%d downloads", result.downloadCount))
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = if (result.matchesFile) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
