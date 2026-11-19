@@ -150,9 +150,15 @@ fun MainScreen(
     
     // System UI controller for edge-to-edge support
     val systemUiController = rememberSystemUiController()
-    val useDarkIcons = themeSettings.themeMode != com.pira.ccloud.ui.theme.ThemeMode.DARK
+    // Dark icons only on a light theme (the default cinema look is dark)
+    val systemDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val useDarkIcons = when (themeSettings.themeMode) {
+        com.pira.ccloud.ui.theme.ThemeMode.DARK -> false
+        com.pira.ccloud.ui.theme.ThemeMode.LIGHT -> true
+        com.pira.ccloud.ui.theme.ThemeMode.SYSTEM -> !systemDark
+    }
     
-    LaunchedEffect(themeSettings) {
+    LaunchedEffect(themeSettings, useDarkIcons) {
         systemUiController.setStatusBarColor(
             color = androidx.compose.ui.graphics.Color.Transparent,
             darkIcons = useDarkIcons

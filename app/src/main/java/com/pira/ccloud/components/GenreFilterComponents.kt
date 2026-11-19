@@ -2,6 +2,7 @@ package com.pira.ccloud.components
 
 import com.pira.ccloud.utils.tr
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,12 +51,6 @@ fun GenreFilterSection(
             .fillMaxWidth()
             .padding(vertical = 8.dp)
     ) {
-        Text(
-            text = tr("Filters"),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-        )
         
         // Filter row with filter type on left and genre selector on right
         Row(
@@ -96,10 +91,12 @@ fun FilterTypeSelector(
             .focusHighlight(shape = RoundedCornerShape(18.dp), focusedScale = 1.06f, outlineWidth = 2.dp)
             .clickable { expanded = true },
         shape = RoundedCornerShape(18.dp),
+        // Outlined pills over the dark screen, as the cinema look's category buttons
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primary
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Box(
             modifier = Modifier
@@ -113,7 +110,7 @@ fun FilterTypeSelector(
                 Text(
                     text = tr("Sort: %s", filterTypeShortLabel(selectedFilterType)),
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -122,7 +119,7 @@ fun FilterTypeSelector(
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
                     contentDescription = tr("Filter options"),
-                    tint = MaterialTheme.colorScheme.onPrimary,
+                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.height(16.dp)
                 )
             }
@@ -215,10 +212,12 @@ fun GenreSelector(
             .focusHighlight(shape = RoundedCornerShape(18.dp), focusedScale = 1.06f, outlineWidth = 2.dp)
             .clickable { expanded = true },
         shape = RoundedCornerShape(18.dp),
+        // Outlined pills over the dark screen, as the cinema look's category buttons
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondary
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Box(
             modifier = Modifier
@@ -232,13 +231,13 @@ fun GenreSelector(
                 Text(
                     text = selectedGenreTitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSecondary,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold
                 )
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
                     contentDescription = tr("Genre options"),
-                    tint = MaterialTheme.colorScheme.onSecondary,
+                    tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.height(16.dp)
                 )
             }

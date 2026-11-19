@@ -64,16 +64,16 @@ fun AppNavigation(
                 },
                 backgroundColor = when (themeSettings.themeMode) {
                     com.pira.ccloud.ui.theme.ThemeMode.DARK -> {
-                        androidx.compose.ui.graphics.Color(0xFF121212)
+                        com.pira.ccloud.ui.theme.CinemaBlack
                     }
                     com.pira.ccloud.ui.theme.ThemeMode.LIGHT -> {
-                        androidx.compose.ui.graphics.Color(0xFFFFFBFE)
+                        androidx.compose.ui.graphics.Color(0xFFF7F7F7)
                     }
                     com.pira.ccloud.ui.theme.ThemeMode.SYSTEM -> {
                         if (isSystemInDarkMode) {
-                            androidx.compose.ui.graphics.Color(0xFF121212)
+                            com.pira.ccloud.ui.theme.CinemaBlack
                         } else {
-                            androidx.compose.ui.graphics.Color(0xFFFFFBFE)
+                            androidx.compose.ui.graphics.Color(0xFFF7F7F7)
                         }
                     }
                 }

@@ -66,6 +66,14 @@ import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
 import coil.request.ImageRequest
 import com.pira.ccloud.components.GenreFilterSection
+import com.pira.ccloud.components.CinemaHeader
+import com.pira.ccloud.components.ContinueWatchingRow
+import com.pira.ccloud.components.FeaturedBanner
+import com.pira.ccloud.components.PosterCard
+import com.pira.ccloud.components.PosterPlaceholder
+import com.pira.ccloud.components.PosterPlaceholderBanner
+import com.pira.ccloud.components.SectionTitle
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import com.pira.ccloud.components.focusHighlight
 import com.pira.ccloud.components.FocusListOnOpen
 import androidx.compose.ui.focus.onFocusChanged
@@ -99,6 +107,8 @@ fun SeriesScreen(
     }
     
     Column(modifier = Modifier.fillMaxSize()) {
+        CinemaHeader(title = tr("Series"))
+
         // Genre filter section
         GenreFilterSection(
             genres = genres,
@@ -166,39 +176,21 @@ fun SeriesScreen(
 
 @Composable
 fun LoadingScreenSeries() {
-    val shimmerColor = MaterialTheme.colorScheme.surfaceVariant
-    val shimmerColorShade = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
-    
-    Column(
+    val columns = DeviceUtils.getPosterColumns(LocalContext.current.resources)
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
         modifier = Modifier.fillMaxSize(),
-        horizontalAlignment = Alignment.CenterHorizontally
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+        userScrollEnabled = false
     ) {
-        // Add a title while loading
-        Text(
-            text = tr("Loading Series..."),
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.padding(16.dp),
-            fontWeight = FontWeight.Bold
-        )
-        
-        AnimatedVisibility(
-            visible = true,
-            enter = fadeIn(initialAlpha = 0.3f),
-            exit = fadeOut()
-        ) {
-            val columns = DeviceUtils.getGridColumns(LocalContext.current.resources)
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(columns),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(6) { // Show 6 loading placeholders
-                    ShimmerSeriesItem(shimmerColor, shimmerColorShade)
-                }
-            }
+        // The featured banner's place, then posters
+        item(span = { GridItemSpan(maxLineSpan) }) {
+            PosterPlaceholderBanner()
+        }
+        items(columns * 3) {
+            PosterPlaceholder()
         }
     }
 }
@@ -321,33 +313,55 @@ fun SeriesGrid(
     val seriesList = series.toList()
     val context = LocalContext.current
     
-    val columns = DeviceUtils.getGridColumns(LocalContext.current.resources)
+    val columns = DeviceUtils.getPosterColumns(LocalContext.current.resources)
     val gridState = rememberLazyGridState()
     // The item the remote was on (kept while one is open), focused when the screen opens
     var focusedIndex by rememberSaveable { mutableStateOf(0) }
     val focusTarget = focusedIndex.coerceIn(0, (seriesList.size - 1).coerceAtLeast(0))
     val itemFocus = remember { FocusRequester() }
-    FocusListOnOpen(gridState, itemFocus, focusTarget, seriesList.isNotEmpty())
+    // The featured banner and the Continue Watching row come before the posters
+    val headerCount = 2
+    FocusListOnOpen(gridState, itemFocus, focusTarget + headerCount, seriesList.isNotEmpty())
+    val openItem: (Series) -> Unit = { item ->
+        // Save to storage, then open its page
+        StorageUtils.saveSeriesToFile(context, item)
+        navController?.navigate("single_series/${item.id}")
+    }
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         state = gridState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        itemsIndexed(seriesList) { index, seriesItem ->
+        item(span = { GridItemSpan(maxLineSpan) }, contentType = "featured") {
+            seriesList.firstOrNull()?.let { featured ->
+                FeaturedBanner(
+                    title = featured.title,
+                    coverUrl = featured.cover.ifBlank { featured.image },
+                    year = featured.year,
+                    genres = featured.genres.map { it.title },
+                    onOpen = { openItem(featured) }
+                )
+            }
+        }
+        item(span = { GridItemSpan(maxLineSpan) }, contentType = "header") {
+            Column {
+                ContinueWatchingRow(type = "series", navController = navController)
+                SectionTitle(
+                    text = tr("All Series"),
+                    modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp)
+                )
+            }
+        }
+        itemsIndexed(seriesList) { index, entry ->
             SeriesItem(
                 modifier = Modifier
                     .then(if (index == focusTarget) Modifier.focusRequester(itemFocus) else Modifier)
                     .onFocusChanged { if (it.hasFocus) focusedIndex = index },
-                series = seriesItem,
-                onClick = {
-                    // Save series to storage
-                    StorageUtils.saveSeriesToFile(context, seriesItem)
-                    // Navigate to single series screen
-                    navController?.navigate("single_series/${seriesItem.id}")
-                }
+                series = entry,
+                onClick = { openItem(entry) }
             )
             
             // Load more when we're near the end of the list (asked again when a load ends, as a
@@ -360,31 +374,25 @@ fun SeriesGrid(
         }
         
         if (isLoadingMore) {
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Modern animated loading indicator
                     ModernCircularProgressIndicatorSeries()
                 }
             }
         }
         
         if (errorMessage != null) {
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }) {
                 ErrorItemSeries(
                     errorMessage = errorMessage,
                     onRetry = onRetry
                 )
             }
-        }
-        
-        // Add a small spacer at the bottom to avoid excessive padding
-        item {
-            Spacer(modifier = Modifier.height(8.dp))
         }
     }
 }
@@ -432,109 +440,14 @@ fun SeriesItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
+    PosterCard(
+        title = series.title,
+        imageUrl = series.image,
+        year = series.year,
+        imdb = series.imdb,
+        onClick = onClick,
         modifier = modifier
-            .fillMaxWidth()
-            .height(310.dp) // Fixed height for all cards
-            .focusHighlight()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp)
-        ) {
-            // Series poster with rating overlay
-            Box {
-                Image(
-                    painter = rememberAsyncImagePainter(
-                        ImageRequest.Builder(LocalContext.current)
-                            .data(series.image)
-                            .crossfade(true)
-                            .build()
-                    ),
-                    contentDescription = series.title,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop
-                )
-                
-                // Rating overlay at top-right corner
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp),
-                    shape = RoundedCornerShape(50.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.Black.copy(alpha = 0.7f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = tr("Rating"),
-                            tint = Color.Yellow,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = String.format("%.1f", series.imdb),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Series details with weight to fill remaining space
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = series.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                Text(
-                    text = series.year.toString(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Genres
-                if (series.genres.isNotEmpty()) {
-                    Text(
-                        text = series.genres.joinToString(", ") { it.title },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
+    )
 }
 
 @Composable

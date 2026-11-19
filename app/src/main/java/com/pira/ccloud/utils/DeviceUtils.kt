@@ -45,4 +45,19 @@ object DeviceUtils {
             else -> 2 // Phones
         }
     }
+
+    /**
+     * Columns of a grid of posters (the cinema look's tall cards, smaller than the old ones)
+     */
+    fun getPosterColumns(resources: Resources): Int {
+        val displayMetrics = resources.displayMetrics
+        val screenWidthDp = displayMetrics.widthPixels / displayMetrics.density
+        val isTv = resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+        return when {
+            isTv -> 6
+            screenWidthDp >= 840 -> 6
+            screenWidthDp >= 600 -> 5
+            else -> 3
+        }
+    }
 }

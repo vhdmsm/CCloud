@@ -22,11 +22,12 @@ class ThemeManager(private val context: Context) {
     }
     
     fun loadThemeSettings(): ThemeSettings {
-        val themeModeStr = prefs.getString("theme_mode", ThemeMode.SYSTEM.name) ?: ThemeMode.SYSTEM.name
+        moveToCinemaLook()
+        val themeModeStr = prefs.getString("theme_mode", ThemeMode.DARK.name) ?: ThemeMode.DARK.name
         val themeMode = try {
             ThemeMode.valueOf(themeModeStr)
         } catch (e: IllegalArgumentException) {
-            ThemeMode.SYSTEM
+            ThemeMode.DARK
         }
         
         val primaryColor = prefs.getInt("primary_color", defaultPrimaryColor.toArgb())
@@ -37,6 +38,28 @@ class ThemeManager(private val context: Context) {
             primaryColor = Color(primaryColor)
             // Removed secondaryColor as it's no longer used
         )
+    }
+
+    /**
+     * Once, when updating from a version before the cinema look: the old defaults (purple, follow
+     * the system) were saved on every launch, so they are moved to the new ones (red, dark). A
+     * color or mode the user picked themselves is kept.
+     */
+    private fun moveToCinemaLook() {
+        if (prefs.getInt("style_version", 0) >= CINEMA_STYLE_VERSION) return
+        prefs.edit {
+            if (prefs.getInt("primary_color", legacyDefaultPrimaryColor.toArgb()) == legacyDefaultPrimaryColor.toArgb()) {
+                putInt("primary_color", defaultPrimaryColor.toArgb())
+            }
+            if (prefs.getString("theme_mode", ThemeMode.SYSTEM.name) == ThemeMode.SYSTEM.name) {
+                putString("theme_mode", ThemeMode.DARK.name)
+            }
+            putInt("style_version", CINEMA_STYLE_VERSION)
+        }
+    }
+
+    private companion object {
+        const val CINEMA_STYLE_VERSION = 2
     }
 }
 

@@ -6,7 +6,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 
 data class ThemeSettings(
-    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val themeMode: ThemeMode = ThemeMode.DARK,
     val primaryColor: Color = defaultPrimaryColor
     // Removed secondaryColor as it's no longer used
 )
@@ -15,15 +15,17 @@ enum class ThemeMode {
     LIGHT, DARK, SYSTEM
 }
 
-// Default colors
-val defaultPrimaryColor = Color(0xFF6650a4) // Purple40
+// Default colors: the cinema red
+val defaultPrimaryColor = CinemaRed
+// The default before the cinema look (v2.3.0); a saved copy of it is moved to the new default
+val legacyDefaultPrimaryColor = Color(0xFF6650a4)
 // Removed defaultSecondaryColor as it's no longer used
 
 // Predefined color options
 val colorOptions = listOf(
+    CinemaRed, // Red (default)
     Color(0xFF6650a4), // Purple
     Color(0xFF006A6A), // Teal
-    Color(0xFFBA1A1A), // Red
     Color(0xFF7D5260), // Pink
     Color(0xFF625B71), // PurpleGrey
     Color(0xFF006D32), // Green

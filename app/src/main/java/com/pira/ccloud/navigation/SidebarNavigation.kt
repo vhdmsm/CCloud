@@ -5,6 +5,7 @@ import com.pira.ccloud.utils.tr
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -62,10 +63,10 @@ fun SidebarNavigation(navController: NavController) {
             .fillMaxHeight()
             .width(100.dp) // Increased width for better TV experience
             .padding(top = 24.dp, bottom = 24.dp), // Add padding top and bottom
-        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
+        // The sidebar sits on the screen's own near-black, as in the cinema look
+        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.background,
         header = {
-            // Optional header content
-            Spacer(modifier = Modifier.height(16.dp))
+            com.pira.ccloud.components.AppWordmark(modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
         }
     ) {
         // Scrolls when the sections don't all fit the screen's height (the remote scrolls it along)
@@ -89,9 +90,10 @@ fun SidebarNavigation(navController: NavController) {
                         label = "scale"
                     )
                     
+                    // The current section is white with a red mark under it; the others are grey
                     val iconColor by animateColorAsState(
-                        targetValue = if (isFocused) Color.White else if (isSelected) 
-                            androidx.compose.material3.MaterialTheme.colorScheme.primary 
+                        targetValue = if (isFocused || isSelected)
+                            androidx.compose.material3.MaterialTheme.colorScheme.onBackground
                         else 
                             androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                         animationSpec = tween(durationMillis = 200),
@@ -99,8 +101,8 @@ fun SidebarNavigation(navController: NavController) {
                     )
                     
                     val textColor by animateColorAsState(
-                        targetValue = if (isFocused) Color.White else if (isSelected) 
-                            androidx.compose.material3.MaterialTheme.colorScheme.primary 
+                        targetValue = if (isFocused || isSelected)
+                            androidx.compose.material3.MaterialTheme.colorScheme.onBackground
                         else 
                             androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                         animationSpec = tween(durationMillis = 200),
@@ -127,12 +129,6 @@ fun SidebarNavigation(navController: NavController) {
                                             color = Color.White.copy(alpha = 0.22f),
                                             border = androidx.compose.foundation.BorderStroke(2.dp, Color.White)
                                         ) {}
-                                    } else if (isSelected) {
-                                        androidx.compose.material3.Surface(
-                                            modifier = Modifier.size(48.dp), // Increased size
-                                            shape = CircleShape,
-                                            color = androidx.compose.material3.MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                        ) {}
                                     }
                                     Icon(
                                         imageVector = screen.icon ?: Icons.Default.Movie, // Provide a fallback icon
@@ -148,6 +144,16 @@ fun SidebarNavigation(navController: NavController) {
                                     fontSize = androidx.compose.material3.MaterialTheme.typography.labelMedium.fontSize, // Increased font size
                                     fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Normal,
                                     maxLines = 1
+                                )
+                                // The red mark of the current section
+                                Box(
+                                    modifier = Modifier
+                                        .padding(top = 4.dp)
+                                        .size(width = 18.dp, height = 3.dp)
+                                        .background(
+                                            if (isSelected) androidx.compose.material3.MaterialTheme.colorScheme.primary else Color.Transparent,
+                                            androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
+                                        )
                                 )
                             }
                         },
@@ -171,9 +177,9 @@ fun SidebarNavigation(navController: NavController) {
                             }
                         },
                         colors = NavigationRailItemDefaults.colors(
-                            selectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                            selectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                             unselectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                            selectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                            selectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                             unselectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                             indicatorColor = Color.Transparent
                         )

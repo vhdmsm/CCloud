@@ -366,7 +366,7 @@ fun CountryPosterGrid(
     val postersList = posters.toList()
     val context = LocalContext.current
     
-    val columns = DeviceUtils.getGridColumns(LocalContext.current.resources)
+    val columns = DeviceUtils.getPosterColumns(LocalContext.current.resources)
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         modifier = Modifier.fillMaxSize(),
@@ -468,142 +468,19 @@ fun CountryModernCircularProgressIndicator() {
 @Composable
 fun CountryPosterItem(
     poster: Poster,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(310.dp) // Fixed height for all cards
-            .focusHighlight()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp)
-        ) {
-            // Poster image with rating overlay
-            Box {
-                Image(
-                    painter = rememberAsyncImagePainter(
-                        ImageRequest.Builder(LocalContext.current)
-                            .data(poster.image)
-                            .crossfade(true)
-                            .build()
-                    ),
-                    contentDescription = poster.title,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(180.dp)
-                        .clip(RoundedCornerShape(8.dp)),
-                    contentScale = ContentScale.Crop
-                )
-                
-                // Rating overlay at top-right corner
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp),
-                    shape = RoundedCornerShape(50.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = Color.Black.copy(alpha = 0.7f)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Star,
-                            contentDescription = tr("Rating"),
-                            tint = Color.Yellow,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = String.format("%.1f", poster.imdb),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = Color.White,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-                
-                // Type indicator at bottom-right corner
-                Card(
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(8.dp),
-                    shape = RoundedCornerShape(50.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (poster.isMovie()) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.secondary
-                        }
-                    )
-                ) {
-                    Box(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = if (poster.isMovie()) tr("Movie") else tr("Series"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (poster.isMovie()) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSecondary
-                            },
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Poster details with weight to fill remaining space
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = poster.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                
-                Spacer(modifier = Modifier.height(4.dp))
-                
-                Text(
-                    text = poster.year.toString(),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Genres
-                if (poster.genres.isNotEmpty()) {
-                    Text(
-                        text = poster.genres.joinToString(", ") { it.title },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-    }
+    com.pira.ccloud.components.PosterCard(
+        title = poster.title,
+        imageUrl = poster.image,
+        year = poster.year,
+        imdb = poster.imdb,
+        onClick = onClick,
+        modifier = modifier
+    )
 }
+
 
 @Composable
 fun CountryErrorScreen(
