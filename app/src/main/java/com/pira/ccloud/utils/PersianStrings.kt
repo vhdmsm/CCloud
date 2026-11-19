@@ -355,6 +355,18 @@ object PersianStrings {
         "Off" to "خاموش",
         "Persian (فارسی)" to "فارسی",
         "English" to "انگلیسی",
-        "Persian + English" to "فارسی + انگلیسی"
+        "Persian + English" to "فارسی + انگلیسی",
+        // App updates
+        "Update available" to "به‌روزرسانی موجود است",
+        "CCloud %s is available. You have %s." to "نسخه %s سی‌کلود منتشر شده است. نسخه فعلی شما %s است.",
+        "Update" to "به‌روزرسانی",
+        "Downloading update…" to "در حال دانلود به‌روزرسانی…",
+        "%d%%" to "%d٪",
+        "Allow installing the update" to "اجازه نصب به‌روزرسانی",
+        "To install the update, allow CCloud to install apps, then come back." to "برای نصب به‌روزرسانی، به سی‌کلود اجازه نصب برنامه بدهید و سپس به برنامه برگردید.",
+        "Open settings" to "باز کردن تنظیمات",
+        "Update failed" to "به‌روزرسانی انجام نشد",
+        "The update could not be downloaded." to "دانلود به‌روزرسانی انجام نشد.",
+        "The installer could not be opened." to "نصب‌کننده باز نشد."
     )
 }

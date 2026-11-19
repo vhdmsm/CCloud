@@ -57,6 +57,7 @@ import com.pira.ccloud.utils.StorageUtils
 import com.pira.ccloud.data.model.FontSettings
 import com.pira.ccloud.utils.DeviceUtils
 import com.pira.ccloud.utils.AppLanguage
+import com.pira.ccloud.components.UpdatePrompt
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -84,8 +85,11 @@ class MainActivity : ComponentActivity() {
             enableEdgeToEdge()
         }
         
+        // Look for a newer release each time the app opens (not when the screen is only rebuilt,
+        // e.g. after changing the language)
+        val checkForUpdate = savedInstanceState == null
         setContent {
-            MainApp()
+            MainApp(checkForUpdate)
         }
     }
 
@@ -97,7 +101,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MainApp() {
+fun MainApp(checkForUpdate: Boolean = false) {
     val themeManager = ThemeManager(androidx.compose.ui.platform.LocalContext.current)
     var themeSettings by remember { mutableStateOf(themeManager.loadThemeSettings()) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -113,6 +117,7 @@ fun MainApp() {
             onThemeSettingsChanged = { themeSettings = it },
             onFontSettingsChanged = { fontSettings = it }
         )
+        if (checkForUpdate) UpdatePrompt()
     }
 }
 
