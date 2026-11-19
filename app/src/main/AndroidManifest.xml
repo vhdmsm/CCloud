@@ -5,6 +5,8 @@
     <!-- Internet and network permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Opening the system installer for an app update downloaded from GitHub releases -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Declare that the app supports Android TV -->
     <uses-feature
@@ -54,6 +56,17 @@
             android:supportsPictureInPicture="false"
             android:resizeableActivity="false"
             android:hardwareAccelerated="true" />
+
+        <!-- Hands a downloaded update APK to the package installer -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_file_paths" />
+        </provider>
     </application>
 
 </manifest>
