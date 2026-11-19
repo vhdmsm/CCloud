@@ -22,6 +22,12 @@ object PersianStrings {
         "Country" to "کشور",
         "Movie" to "فیلم",
 
+        // Home lists (cinema look)
+        "Continue Watching" to "ادامه تماشا",
+        "All Movies" to "همه فیلم‌ها",
+        "All Series" to "همه سریال‌ها",
+        "Watch Now" to "تماشا کنید",
+
         // Common actions
         "Back" to "بازگشت",
         "Cancel" to "انصراف",

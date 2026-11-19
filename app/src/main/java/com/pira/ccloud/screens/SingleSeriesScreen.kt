@@ -461,8 +461,8 @@ fun SeriesDetailsContent(
                         .background(
                             androidx.compose.ui.graphics.Brush.verticalGradient(
                                 colors = listOf(
-                                    MaterialTheme.colorScheme.surface.copy(alpha = 0.5f),
-                                    MaterialTheme.colorScheme.surface
+                                    MaterialTheme.colorScheme.background.copy(alpha = 0.35f),
+                                    MaterialTheme.colorScheme.background
                                 )
                             )
                         )

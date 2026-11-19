@@ -5,6 +5,7 @@ import com.pira.ccloud.utils.tr
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -40,8 +41,9 @@ fun BottomNavigationBar(navController: NavController) {
 
     NavigationBar(
         modifier = Modifier.fillMaxWidth(),
-        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.surface,
-        tonalElevation = 3.dp
+        // A near-black bar, as in the cinema look
+        containerColor = androidx.compose.material3.MaterialTheme.colorScheme.background,
+        tonalElevation = 0.dp
     ) {
         AppScreens.screens.filter { it.showBottomBar }.forEach { screen ->
             val isSelected = currentRoute == screen.route
@@ -51,9 +53,10 @@ fun BottomNavigationBar(navController: NavController) {
                 label = "scale"
             )
             
+            // The current section is white with a red mark over it; the others are grey
             val iconColor by animateColorAsState(
-                targetValue = if (isSelected) 
-                    androidx.compose.material3.MaterialTheme.colorScheme.primary 
+                targetValue = if (isSelected)
+                    androidx.compose.material3.MaterialTheme.colorScheme.onBackground
                 else 
                     androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                 animationSpec = tween(durationMillis = 200),
@@ -61,8 +64,8 @@ fun BottomNavigationBar(navController: NavController) {
             )
             
             val textColor by animateColorAsState(
-                targetValue = if (isSelected) 
-                    androidx.compose.material3.MaterialTheme.colorScheme.primary 
+                targetValue = if (isSelected)
+                    androidx.compose.material3.MaterialTheme.colorScheme.onBackground
                 else 
                     androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                 animationSpec = tween(durationMillis = 200),
@@ -74,17 +77,18 @@ fun BottomNavigationBar(navController: NavController) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(
                             modifier = Modifier
-                                .size(56.dp)
+                                .size(width = 20.dp, height = 3.dp)
+                                .background(
+                                    if (isSelected) androidx.compose.material3.MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    androidx.compose.foundation.shape.RoundedCornerShape(2.dp)
+                                )
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
                                 .scale(scale),
                             contentAlignment = Alignment.Center
                         ) {
-                            if (isSelected) {
-                                androidx.compose.material3.Surface(
-                                    modifier = Modifier.size(36.dp),
-                                    shape = CircleShape,
-                                    color = androidx.compose.material3.MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                                ) {}
-                            }
                             Icon(
                                 imageVector = screen.icon ?: Icons.Default.Movie, // Provide a fallback icon
                                 contentDescription = tr(stringResource(screen.resourceId)),
@@ -121,9 +125,9 @@ fun BottomNavigationBar(navController: NavController) {
                     }
                 },
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                    selectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                     unselectedIconColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                    selectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+                    selectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                     unselectedTextColor = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
                     indicatorColor = Color.Transparent
                 )

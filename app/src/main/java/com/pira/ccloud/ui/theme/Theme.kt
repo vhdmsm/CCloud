@@ -53,49 +53,49 @@ fun appTypography(fontFamily: FontFamily?): androidx.compose.material3.Typograph
         ),
         headlineLarge = TextStyle(
             fontFamily = fontFamily ?: FontFamily.Default,
-            fontWeight = FontWeight.Normal,
+            fontWeight = FontWeight.Bold,
             fontSize = 32.sp,
             lineHeight = 40.sp,
             letterSpacing = 0.sp
         ),
         headlineMedium = TextStyle(
             fontFamily = fontFamily ?: FontFamily.Default,
-            fontWeight = FontWeight.Normal,
+            fontWeight = FontWeight.Bold,
             fontSize = 28.sp,
             lineHeight = 36.sp,
             letterSpacing = 0.sp
         ),
         headlineSmall = TextStyle(
             fontFamily = fontFamily ?: FontFamily.Default,
-            fontWeight = FontWeight.Normal,
+            fontWeight = FontWeight.Bold,
             fontSize = 24.sp,
             lineHeight = 32.sp,
             letterSpacing = 0.sp
         ),
         titleLarge = TextStyle(
             fontFamily = fontFamily ?: FontFamily.Default,
-            fontWeight = FontWeight.Normal,
+            fontWeight = FontWeight.Bold,
             fontSize = 22.sp,
             lineHeight = 28.sp,
             letterSpacing = 0.sp
         ),
         titleMedium = TextStyle(
             fontFamily = fontFamily ?: FontFamily.Default,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 16.sp,
             lineHeight = 24.sp,
             letterSpacing = 0.15.sp
         ),
         titleSmall = TextStyle(
             fontFamily = fontFamily ?: FontFamily.Default,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
             lineHeight = 20.sp,
             letterSpacing = 0.1.sp
         ),
         labelLarge = TextStyle(
             fontFamily = fontFamily ?: FontFamily.Default,
-            fontWeight = FontWeight.Medium,
+            fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
             lineHeight = 20.sp,
             letterSpacing = 0.1.sp
@@ -117,44 +117,54 @@ fun appTypography(fontFamily: FontFamily?): androidx.compose.material3.Typograph
     )
 }
 
-private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80,
-    background = Color(0xFF121212),
-    surface = Color(0xFF1E1E1E),
-    surfaceVariant = Color(0xFF2D2D2D),
+// The dark cinema look: near-black screens, red accent, grey secondary text
+private fun cinemaDarkScheme(accent: Color) = darkColorScheme(
+    primary = accent,
     onPrimary = Color.White,
+    primaryContainer = accent.copy(alpha = 0.24f),
+    onPrimaryContainer = Color.White,
+    secondary = if (accent == CinemaRed) CinemaRedDark else accent,
     onSecondary = Color.White,
-    onTertiary = Color.White,
+    secondaryContainer = CinemaSurfaceHigh,
+    onSecondaryContainer = Color.White,
+    tertiary = CinemaGold,
+    onTertiary = Color.Black,
+    background = CinemaBlack,
     onBackground = Color.White,
+    surface = CinemaSurface,
     onSurface = Color.White,
-    onSurfaceVariant = Color(0xFFE0E0E0)
+    surfaceVariant = CinemaSurfaceHigh,
+    onSurfaceVariant = CinemaGreyText,
+    surfaceTint = Color.Transparent,
+    surfaceContainerLowest = CinemaBlack,
+    surfaceContainerLow = CinemaSurface,
+    surfaceContainer = CinemaSurface,
+    surfaceContainerHigh = CinemaSurfaceHigh,
+    surfaceContainerHighest = Color(0xFF303030),
+    inverseSurface = Color.White,
+    inverseOnSurface = Color.Black,
+    outline = CinemaOutline,
+    outlineVariant = Color(0xFF333333),
+    scrim = Color.Black
 )
 
-private val LightColorScheme = lightColorScheme(
-    primary = Purple40,
-    secondary = PurpleGrey40,
-    tertiary = Pink40,
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    surfaceVariant = Color(0xFFE7E0EC),
+private fun cinemaLightScheme(accent: Color) = lightColorScheme(
+    primary = accent,
     onPrimary = Color.White,
+    primaryContainer = accent.copy(alpha = 0.14f),
+    onPrimaryContainer = Color(0xFF1C1B1F),
+    secondary = if (accent == CinemaRed) CinemaRedDark else accent,
     onSecondary = Color.White,
+    tertiary = Color(0xFFB38600),
     onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    onSurfaceVariant = Color(0xFF49454F)
-
-    /* Other default colors to override
-    background = Color(0xFFFFFBFE),
-    surface = Color(0xFFFFFBFE),
-    onPrimary = Color.White,
-    onSecondary = Color.White,
-    onTertiary = Color.White,
-    onBackground = Color(0xFF1C1B1F),
-    onSurface = Color(0xFF1C1B1F),
-    */
+    background = Color(0xFFF7F7F7),
+    onBackground = Color(0xFF141414),
+    surface = Color.White,
+    onSurface = Color(0xFF141414),
+    surfaceVariant = Color(0xFFECECEC),
+    onSurfaceVariant = Color(0xFF5C5C5C),
+    surfaceTint = Color.Transparent,
+    outline = Color(0xFFBDBDBD)
 )
 
 @Composable
@@ -174,55 +184,16 @@ fun CCloudTheme(
     val fontType = if (AppLanguage.isPersian && fontSettings.fontType == FontType.DEFAULT) FontType.VAZIRMATN else fontSettings.fontType
     val fontFamily = FontManager.loadFontFamily(context, fontType)
     
-    val colorScheme = when {
-        themeSettings.primaryColor != defaultPrimaryColor -> {
-            // Custom colors - using the same color for primary and secondary since we removed secondary color setting
-            if (darkTheme) {
-                darkColorScheme(
-                    primary = themeSettings.primaryColor,
-                    secondary = themeSettings.primaryColor,
-                    tertiary = Pink80,
-                    background = Color(0xFF121212),
-                    surface = Color(0xFF1E1E1E),
-                    surfaceVariant = Color(0xFF2D2D2D),
-                    onPrimary = Color.White,
-                    onSecondary = Color.White,
-                    onTertiary = Color.White,
-                    onBackground = Color.White,
-                    onSurface = Color.White,
-                    onSurfaceVariant = Color(0xFFE0E0E0)
-                )
-            } else {
-                lightColorScheme(
-                    primary = themeSettings.primaryColor,
-                    secondary = themeSettings.primaryColor,
-                    tertiary = Pink40,
-                    background = Color(0xFFFFFBFE),
-                    surface = Color(0xFFFFFBFE),
-                    surfaceVariant = Color(0xFFE7E0EC),
-                    onPrimary = Color.White,
-                    onSecondary = Color.White,
-                    onTertiary = Color.White,
-                    onBackground = Color(0xFF1C1B1F),
-                    onSurface = Color(0xFF1C1B1F),
-                    onSurfaceVariant = Color(0xFF49454F)
-                )
-            }
-        }
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
-            val context = LocalContext.current
-            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        }
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    // The chosen accent (red by default) on the cinema neutrals
+    val colorScheme = if (darkTheme) cinemaDarkScheme(themeSettings.primaryColor) else cinemaLightScheme(themeSettings.primaryColor)
     
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.primary.toArgb()
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = darkTheme
+            // The screens draw under the status bar, which shows their own dark (or light) top
+            window.statusBarColor = Color.Transparent.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !darkTheme
         }
     }
 
