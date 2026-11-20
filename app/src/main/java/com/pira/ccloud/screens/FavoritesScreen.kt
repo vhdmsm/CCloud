@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -81,6 +82,7 @@ import com.pira.ccloud.data.model.FavoriteItem
 import com.pira.ccloud.navigation.AppScreens
 import com.pira.ccloud.utils.StorageUtils
 import java.util.UUID
+import com.pira.ccloud.components.FocusWhenReady
 import com.pira.ccloud.components.focusHighlight
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -95,10 +97,9 @@ fun FavoritesScreen(navController: NavController) {
     var showMoveToGroupDialog by remember { mutableStateOf(false) }
     var selectedItem by remember { mutableStateOf<FavoriteItem?>(null) }
     
-    // Focus requesters for handling TV remote navigation
-    val focusRequester = remember { FocusRequester() }
-    val groupCardFocusRequester = remember { FocusRequester() }
-    val favoritesCardFocusRequester = remember { FocusRequester() }
+    // On a TV the remote starts on the first saved item, as on the Watching screen
+    val firstItemFocus = remember { FocusRequester() }
+    FocusWhenReady(firstItemFocus, favorites.isNotEmpty())
     
     // Load favorites and groups when screen is displayed
     LaunchedEffect(Unit) {
@@ -514,10 +515,7 @@ fun FavoritesScreen(navController: NavController) {
                 // Create group button
                 IconButton(
                     onClick = { showCreateGroupDialog = true },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .focusable()
-                        .focusRequester(remember { FocusRequester() })
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
@@ -530,10 +528,7 @@ fun FavoritesScreen(navController: NavController) {
                 if (favorites.isNotEmpty()) {
                     IconButton(
                         onClick = { showDeleteAllDialog = true },
-                        modifier = Modifier
-                            .size(48.dp)
-                            .focusable()
-                            .focusRequester(remember { FocusRequester() })
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Delete,
@@ -554,12 +549,7 @@ fun FavoritesScreen(navController: NavController) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .focusable()
-                    .focusRequester(groupCardFocusRequester)
-                    .focusProperties {
-                        down = favoritesCardFocusRequester
-                    },
+                    .padding(horizontal = 16.dp),
                 elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
@@ -596,6 +586,7 @@ fun FavoritesScreen(navController: NavController) {
                                 Card(
                                     modifier = Modifier
                                         .padding(vertical = 4.dp)
+                                        .focusHighlight(shape = RoundedCornerShape(16.dp), focusedScale = 1.05f)
                                         .clickable {
                                             selectedGroup = group
                                             // Load favorites for this group
@@ -603,22 +594,6 @@ fun FavoritesScreen(navController: NavController) {
                                                 StorageUtils.loadAllFavorites(context)
                                             } else {
                                                 StorageUtils.getFavoritesInGroup(context, group.id)
-                                            }
-                                        }
-                                        .focusable()
-                                        .onKeyEvent { keyEvent ->
-                                            when (keyEvent.key) {
-                                                Key.Enter, Key.Spacebar -> {
-                                                    selectedGroup = group
-                                                    // Load favorites for this group
-                                                    favorites = if (group.isDefault) {
-                                                        StorageUtils.loadAllFavorites(context)
-                                                    } else {
-                                                        StorageUtils.getFavoritesInGroup(context, group.id)
-                                                    }
-                                                    true // Handled
-                                                }
-                                                else -> false // Let default handling occur
                                             }
                                         },
                                     shape = RoundedCornerShape(16.dp),
@@ -683,17 +658,11 @@ fun FavoritesScreen(navController: NavController) {
         
         Spacer(modifier = Modifier.height(8.dp))
         
-        // Content
-        AnimatedVisibility(
-            visible = true,
-            enter = fadeIn(animationSpec = tween(500)) + slideInVertically(animationSpec = tween(500, delayMillis = 200)),
-            exit = fadeOut(animationSpec = tween(500)) + slideOutVertically(animationSpec = tween(500))
-        ) {
+        // Content: takes the rest of the screen, so the list scrolls inside it
+        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
             if (favorites.isEmpty()) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .weight(1f),
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(
@@ -752,53 +721,39 @@ fun FavoritesScreen(navController: NavController) {
                     )
                 }
                 
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .weight(1f)
-                        .focusable()
-                        .focusRequester(favoritesCardFocusRequester)
-                        .focusProperties {
-                            up = groupCardFocusRequester
-                        },
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+                // Each card is one stop for the remote; the list scrolls to the focused card
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {                     
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(0.dp),
-                            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp)
-                        ) {
-                            items(favorites) { favorite ->
-                                FavoriteItemCard(
-                                    favorite = favorite,
-                                    onClick = {
-                                        // Save the favorite to the appropriate database before navigating
-                                        StorageUtils.saveFavoriteToDatabase(context, favorite)
-                                        
-                                        // Navigate to the appropriate screen based on type
-                                        when (favorite.type) {
-                                            "movie" -> {
-                                                navController.navigate("${AppScreens.SingleMovie.route.replace("{movieId}", favorite.id.toString())}")
-                                            }
-                                            "series" -> {
-                                                navController.navigate("${AppScreens.SingleSeries.route.replace("{seriesId}", favorite.id.toString())}")
-                                            }
-                                        }
-                                    },
-                                    onDelete = {
-                                        favoriteToRemove = favorite
-                                        showRemoveFavoriteDialog = true
-                                    },
-                                    onMoveToGroup = { item ->
-                                        selectedItem = item
-                                        showMoveToGroupDialog = true
+                    itemsIndexed(favorites) { index, favorite ->
+                        FavoriteItemCard(
+                            favorite = favorite,
+                            modifier = if (index == 0) Modifier.focusRequester(firstItemFocus) else Modifier,
+                            onClick = {
+                                // Save the favorite to the appropriate database before navigating
+                                StorageUtils.saveFavoriteToDatabase(context, favorite)
+                                
+                                // Navigate to the appropriate screen based on type
+                                when (favorite.type) {
+                                    "movie" -> {
+                                        navController.navigate("${AppScreens.SingleMovie.route.replace("{movieId}", favorite.id.toString())}")
                                     }
-                                )
+                                    "series" -> {
+                                        navController.navigate("${AppScreens.SingleSeries.route.replace("{seriesId}", favorite.id.toString())}")
+                                    }
+                                }
+                            },
+                            onDelete = {
+                                favoriteToRemove = favorite
+                                showRemoveFavoriteDialog = true
+                            },
+                            onMoveToGroup = { item ->
+                                selectedItem = item
+                                showMoveToGroupDialog = true
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -809,29 +764,18 @@ fun FavoritesScreen(navController: NavController) {
 @Composable
 fun FavoriteItemCard(
     favorite: FavoriteItem,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
     onDelete: () -> Unit,
     onMoveToGroup: (FavoriteItem) -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
     
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .focusHighlight(focusedScale = 1.03f)
-            .clickable { onClick() }
-            .focusable()
-            .focusRequester(focusRequester)
-            .onKeyEvent { keyEvent ->
-                when (keyEvent.key) {
-                    Key.Enter, Key.Spacebar -> {
-                        onClick()
-                        true // Handled
-                    }
-                    else -> false // Let default handling occur
-                }
-            },
+            .clickable { onClick() },
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
         shape = RoundedCornerShape(12.dp)
     ) {
@@ -895,8 +839,7 @@ fun FavoriteItemCard(
             // Menu button for additional actions
             Box {
                 IconButton(
-                    onClick = { showMenu = true },
-                    modifier = Modifier.focusable()
+                    onClick = { showMenu = true }
                 ) {
                     Icon(
                         imageVector = Icons.Default.MoreVert,

@@ -142,7 +142,7 @@ class RankedMovieRepository(
             while (true) {
                 val movies = readServerPage(currentPage, genreId, filterType)
                 hasMore = movies.isNotEmpty()
-                candidates += movies.filter { seen.add(it.id) && isWanted(it) && MovieRanking.isCandidate(it, filterType) }
+                candidates += movies.filter { seen.add(it.id) && isWanted(it) && MovieRanking.isCandidate(it, filterType, series) }
                 lastPage = currentPage
                 if (candidates.size >= MIN_BATCH_SIZE || !hasMore || currentPage - page + 1 >= MAX_PAGES_PER_LOAD) break
                 currentPage++
@@ -188,7 +188,7 @@ class RankedMovieRepository(
                     }
                     val (sameYear, older) = year?.let { y -> unseen.partition { it.year >= y } } ?: (emptyList<Movie>() to emptyList())
                     sameYear.forEach { seen.add(it.id) }
-                    candidates += sameYear.filter { isWanted(it) && MovieRanking.isCandidate(it, filterType) }
+                    candidates += sameYear.filter { isWanted(it) && MovieRanking.isCandidate(it, filterType, series) }
                     lastPage = if (older.isNotEmpty()) currentPage - 1 else currentPage
                     if (older.isNotEmpty() || !hasMore) break
                     if (currentPage - firstPage + 1 >= MAX_PAGES_PER_YEAR) {
@@ -310,7 +310,7 @@ class RankedMovieRepository(
                         pool.exhausted = true
                         continue
                     }
-                    if (pool.ids.add(movie.id) && isWanted(movie) && MovieRanking.isCandidate(movie, filterType) &&
+                    if (pool.ids.add(movie.id) && isWanted(movie) && MovieRanking.isCandidate(movie, filterType, series) &&
                         pool.titles.add("${SeriesPopularity.normalize(movie.title)}|${movie.year}")
                     ) {
                         pool.series += movie
@@ -497,7 +497,7 @@ class RankedMovieRepository(
     private fun languages(movie: Movie): Set<String> = if (series) MovieRanking.languagesOf(movie.country) else emptySet()
 
     // Watchmode gives the IMDb id for OMDb (Most Awards skips both when the description names the
-    // awards). Movies Watchmode says are Indian or Turkish are dropped before any OMDb request.
+    // awards). Movies Watchmode says are Indian or Turkish (series: Indian) are dropped before any OMDb request.
     private suspend fun lookUp(movie: Movie, filterType: FilterType, cachedOnly: Boolean): MovieFacts? {
         val describedAwards = if (filterType.needsOmdb) MovieDescription.awards(movie) else null
         val needsInfo = filterType.needsMovieData || (filterType.needsOmdb && describedAwards == null)
@@ -515,7 +515,7 @@ class RankedMovieRepository(
                 WatchmodeClient.movie(movie.title, movie.year, withCast = false, cachedOnly = true, series = series, languages = languages(movie))
             else -> null
         }
-        if (info != null && MovieRanking.isExcludedOrigin(info)) return null
+        if (info != null && MovieRanking.isExcludedOrigin(info, series)) return null
         val details = if (filterType.needsOmdb && info != null && info.imdbId.isNotEmpty()) {
             if (cachedOnly) {
                 OmdbClient.details(info.imdbId, movie.year, cachedOnly = true)
@@ -575,7 +575,8 @@ object MovieRanking {
     // IMDb votes at which the score counts half and the average the other half
     private const val RATING_VOTES_PRIOR = 10_000.0
 
-    // Indian and Turkish movies are left out of the ranked sorts, by the server's country or genre
+    // Indian and Turkish movies are left out of the ranked sorts, by the server's country or genre;
+    // of the series only the Indian ones (Turkish series are shown)
     // The site's countries -> the original languages (ISO 639-1, as Watchmode gives them) their
     // series are likely in; countries not listed tell nothing
     private val countryLanguages: Map<String, Set<String>> = mapOf(
@@ -607,14 +608,20 @@ object MovieRanking {
     private val excludedGenreNames = setOf("هندی", "ترکی")
     // Hindi, Tamil, Telugu, Malayalam, Kannada, Bengali, Marathi, Punjabi, Gujarati, Turkish
     private val excludedLanguages = setOf("hi", "ta", "te", "ml", "kn", "bn", "mr", "pa", "gu", "tr")
+    // Left out of the movies only
+    private val turkishCountryNames = setOf("turkey", "türkiye", "turkiye", "ترکیه")
+    private const val TURKISH_GENRE_NAME = "ترکی"
+    private const val TURKISH_LANGUAGE = "tr"
 
     // Checked before any request, so skipped movies cost nothing
-    fun isCandidate(movie: Movie, filterType: FilterType): Boolean {
+    fun isCandidate(movie: Movie, filterType: FilterType, series: Boolean = false): Boolean {
         if (filterType.isRanked) {
             // Persian titles are the site's own posts (app news, ads), not movies
             if (!LanguageUtils.shouldDisplayTitle(movie.title)) return false
-            if (movie.country.any { it.title.trim().lowercase() in excludedCountryNames }) return false
-            if (movie.genres.any { it.title.trim() in excludedGenreNames }) return false
+            val countries = if (series) excludedCountryNames - turkishCountryNames else excludedCountryNames
+            val genres = if (series) excludedGenreNames - TURKISH_GENRE_NAME else excludedGenreNames
+            if (movie.country.any { it.title.trim().lowercase() in countries }) return false
+            if (movie.genres.any { it.title.trim() in genres }) return false
             // Weakly rated movies are left out (movies not rated yet stay)
             if (isLowRated(movie.imdb)) return false
         }
@@ -631,9 +638,12 @@ object MovieRanking {
     /** Rated, and below [MIN_IMDB]; 0 means not rated yet. */
     fun isLowRated(imdb: Double): Boolean = imdb > 0.0 && imdb < MIN_IMDB
 
-    fun isExcludedLanguage(language: String): Boolean = language.lowercase() in excludedLanguages
+    fun isExcludedLanguage(language: String, series: Boolean = false): Boolean {
+        val code = language.lowercase()
+        return code in excludedLanguages && !(series && code == TURKISH_LANGUAGE)
+    }
 
-    fun isExcludedOrigin(info: MovieInfo): Boolean = isExcludedLanguage(info.originalLanguage)
+    fun isExcludedOrigin(info: MovieInfo, series: Boolean = false): Boolean = isExcludedLanguage(info.originalLanguage, series)
 
     /** Higher is better. Missing data scores lowest, so those movies end up at the bottom of the batch. */
     fun score(filterType: FilterType, facts: RankedMovieRepository.MovieFacts, currentYear: Int): Double {

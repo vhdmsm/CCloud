@@ -110,6 +110,18 @@ class MovieRankingTest {
     }
 
     @Test
+    fun keepsTurkishSeriesButNotIndianOnes() {
+        for (country in listOf("Turkey", "ترکیه")) {
+            assertTrue(country, MovieRanking.isCandidate(movie(1, 8.0, 2024, country), FilterType.BEST_OVERALL, series = true))
+        }
+        for (country in listOf("India", "هند")) {
+            assertFalse(country, MovieRanking.isCandidate(movie(1, 8.0, 2024, country), FilterType.BEST_OVERALL, series = true))
+        }
+        assertFalse(MovieRanking.isExcludedOrigin(info(language = "tr"), series = true))
+        assertTrue(MovieRanking.isExcludedOrigin(info(language = "hi"), series = true))
+    }
+
+    @Test
     fun famousActorsNeedsActorData() {
         val noActors = MovieFacts(movie(1, 8.0, 2024), info(), null)
         val starCast = MovieFacts(movie(2, 7.0, 2024), info(cast = 0.9), null)
