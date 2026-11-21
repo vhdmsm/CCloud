@@ -58,10 +58,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -77,6 +79,7 @@ import com.pira.ccloud.data.model.Country
 import com.pira.ccloud.data.model.Poster
 import com.pira.ccloud.ui.search.SearchViewModel
 import com.pira.ccloud.utils.DeviceUtils
+import kotlinx.coroutines.delay
 import com.pira.ccloud.utils.StorageUtils
 import com.pira.ccloud.components.focusHighlight
 
@@ -89,9 +92,21 @@ fun SearchScreen(
     val focusManager = LocalFocusManager.current
     val focusRequester = remember { FocusRequester() }
     
-    // Request focus when the screen is first displayed to ensure keyboard opens on TV
+    val keyboard = LocalSoftwareKeyboardController.current
+    val isTv = remember { DeviceUtils.isTv(context) }
+
+    // Put the cursor in the search bar as soon as the screen opens. The field may not be placed
+    // yet in the first frame (the screen is still coming in), so try a few times
     LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
+        repeat(10) {
+            try {
+                focusRequester.requestFocus()
+                if (isTv) keyboard?.show()
+                return@LaunchedEffect
+            } catch (_: IllegalStateException) {
+                delay(50)
+            }
+        }
     }
     
     Column(
@@ -106,10 +121,9 @@ fun SearchScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focusRequester)
-                .clickable { 
-                    // Ensure keyboard opens when clicking on the TextField on TV
-                    focusRequester.requestFocus()
-                },
+                // On a TV, a text field the remote lands on doesn't open the keyboard by itself
+                // (it waits for OK), so open it whenever the field gets the focus
+                .onFocusChanged { if (isTv && it.isFocused) keyboard?.show() },
             placeholder = { 
                 Text(
                     text = tr("Search movies and series..."),
