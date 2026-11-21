@@ -302,8 +302,8 @@ object WatchmodeClient {
 
     /**
      * The details of the series: of the [seriesCandidates] (at most [MAX_SERIES_TRIES]), the first
-     * in one of [languages]; when none is, the closest unless it's in a language the ranked sorts
-     * leave out (then none: a Korean series isn't dropped for its Turkish remake).
+     * in one of [languages]; when none is, the closest unless it's in a language many remakes are
+     * made in (then none: a Korean series isn't given its Turkish remake's data).
      */
     private suspend fun findSeries(query: String, year: Int, languages: Set<String>): JSONObject? {
         var first: JSONObject? = null
@@ -315,7 +315,7 @@ object WatchmodeClient {
         }
         return first?.takeUnless {
             val language = it.optString("original_language").lowercase()
-            MovieRanking.isExcludedLanguage(language) && languages.none { l -> MovieRanking.isExcludedLanguage(l) }
+            MovieRanking.isRemakeLanguage(language) && languages.none { l -> MovieRanking.isRemakeLanguage(l) }
         }
     }
 

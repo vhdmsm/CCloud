@@ -25,9 +25,10 @@ import kotlinx.coroutines.launch
 class SeriesViewModel : ViewModel() {
     companion object {
         // Genres hidden from the series list: Indian, animation + anime. The site's Turkish genre
-        // is among these ids too, but Turkish series are shown again, so it's let through by name.
+        // is among these ids too, but Turkish series are shown again, so it's let through by name
+        // ("ترکی", or any genre name with "ترک" in it).
         private val HIDDEN_GENRE_IDS = setOf(35, 38, 3)
-        private const val TURKISH_GENRE_NAME = "ترکی"
+        private const val TURKISH_GENRE_PART = "ترک"
         // Series that started before this year are hidden (the series ranking scores from it too)
         private const val MIN_START_YEAR = MovieRanking.SERIES_MIN_START_YEAR
         // Genres about older series, where the start year limit doesn't apply (classic, top 250)
@@ -275,7 +276,7 @@ class SeriesViewModel : ViewModel() {
         if (!LanguageUtils.shouldDisplayTitle(seriesItem.title)) return false
         // A hidden genre picked on purpose (e.g. "Indian") still shows its series
         val hiddenGenreIds = HIDDEN_GENRE_IDS - selectedGenreId
-        if (seriesItem.genres.any { it.id in hiddenGenreIds && it.title.trim() != TURKISH_GENRE_NAME }) return false
+        if (seriesItem.genres.any { it.id in hiddenGenreIds && TURKISH_GENRE_PART !in it.title }) return false
         // Year 0 means unknown, keep those
         if (appliesYearLimit() && seriesItem.year in 1 until MIN_START_YEAR) return false
         return true
