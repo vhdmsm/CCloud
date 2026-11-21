@@ -10,6 +10,7 @@ import com.pira.ccloud.data.model.Poster
 import com.pira.ccloud.data.repository.CountryRepository
 import com.pira.ccloud.data.repository.SearchRepository
 import com.pira.ccloud.utils.LanguageUtils
+import com.pira.ccloud.utils.SearchText
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -69,10 +70,10 @@ class SearchViewModel : ViewModel() {
                 isLoading = true
                 errorMessage = null
                 
-                val result = repository.search(query)
+                val posters = searchMatchingLetters(query)
                 
                 // Filter out posters with Farsi titles
-                val filteredPosters = result.posters.filter { poster ->
+                val filteredPosters = posters.filter { poster ->
                     LanguageUtils.shouldDisplayTitle(poster.title)
                 }
                 
@@ -84,6 +85,30 @@ class SearchViewModel : ViewModel() {
                 isLoading = false
             }
         }
+    }
+    
+    /**
+     * The site's results for [query], matching Turkish letters by plain ones both ways: "Uzak
+     * Şehir" also searches "Uzak Sehir", and when that finds nothing (the site keeps "Şehir"
+     * where "Sehir" was typed) its longest words are searched alone and their titles kept when
+     * they have every word of the query, ignoring accents.
+     */
+    private suspend fun searchMatchingLetters(query: String): List<Poster> {
+        val found = LinkedHashMap<Int, Poster>()
+        fun add(posters: List<Poster>) = posters.forEach { found.putIfAbsent(it.id, it) }
+
+        add(repository.search(query).posters)
+        val folded = SearchText.fold(query)
+        if (folded != query) {
+            add(runCatching { repository.search(folded).posters }.getOrDefault(emptyList()))
+        }
+        if (found.isEmpty()) {
+            for (word in SearchText.fallbackWords(folded)) {
+                val posters = runCatching { repository.search(word).posters }.getOrDefault(emptyList())
+                add(posters.filter { SearchText.matches(it.title, query) })
+            }
+        }
+        return found.values.toList()
     }
     
     private fun loadCountries() {

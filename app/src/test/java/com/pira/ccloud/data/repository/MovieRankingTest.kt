@@ -98,27 +98,20 @@ class MovieRankingTest {
     }
 
     @Test
-    fun leavesOutIndianAndTurkishMovies() {
-        for (country in listOf("India", "هند", "Turkey", "ترکیه")) {
+    fun leavesOutIndianMoviesButKeepsTurkishOnes() {
+        for (country in listOf("India", "هند")) {
             assertFalse(country, MovieRanking.isCandidate(movie(1, 8.0, 2024, country), FilterType.BEST_OVERALL))
+        }
+        for (country in listOf("Turkey", "ترکیه")) {
+            assertTrue(country, MovieRanking.isCandidate(movie(1, 8.0, 2024, country), FilterType.BEST_OVERALL))
         }
         // Server sorts keep them
         assertTrue(MovieRanking.isCandidate(movie(1, 8.0, 2024, "India"), FilterType.BY_IMDB))
         assertTrue(MovieRanking.isExcludedOrigin(info(language = "hi")))
-        assertTrue(MovieRanking.isExcludedOrigin(info(language = "tr")))
+        assertFalse(MovieRanking.isExcludedOrigin(info(language = "tr")))
         assertFalse(MovieRanking.isExcludedOrigin(info()))
-    }
-
-    @Test
-    fun keepsTurkishSeriesButNotIndianOnes() {
-        for (country in listOf("Turkey", "ترکیه")) {
-            assertTrue(country, MovieRanking.isCandidate(movie(1, 8.0, 2024, country), FilterType.BEST_OVERALL, series = true))
-        }
-        for (country in listOf("India", "هند")) {
-            assertFalse(country, MovieRanking.isCandidate(movie(1, 8.0, 2024, country), FilterType.BEST_OVERALL, series = true))
-        }
-        assertFalse(MovieRanking.isExcludedOrigin(info(language = "tr"), series = true))
-        assertTrue(MovieRanking.isExcludedOrigin(info(language = "hi"), series = true))
+        // Still not matched to a Turkish remake of a series from elsewhere
+        assertTrue(MovieRanking.isRemakeLanguage("tr"))
     }
 
     @Test

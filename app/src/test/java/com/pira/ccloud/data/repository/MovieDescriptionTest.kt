@@ -59,16 +59,14 @@ class MovieDescriptionTest {
     }
 
     @Test
-    fun skipsIndianTurkishAndSitePostsBeforeAnyRequest() {
+    fun skipsIndianAndSitePostsBeforeAnyRequest() {
         assertFalse(MovieRanking.isCandidate(movie(genres = listOf("جنایی", "هندی")), FilterType.MOST_POPULAR))
-        assertFalse(MovieRanking.isCandidate(movie(genres = listOf("کمدی", "ترکی")), FilterType.MOST_POPULAR))
         assertFalse(MovieRanking.isCandidate(movie(title = "نسخه جدید ملودی باکس"), FilterType.MOST_POPULAR))
         assertTrue(MovieRanking.isCandidate(movie(), FilterType.MOST_POPULAR))
     }
 
     @Test
-    fun keepsTheTurkishGenreForSeries() {
-        assertTrue(MovieRanking.isCandidate(movie(genres = listOf("کمدی", "ترکی")), FilterType.MOST_POPULAR, series = true))
-        assertFalse(MovieRanking.isCandidate(movie(genres = listOf("جنایی", "هندی")), FilterType.MOST_POPULAR, series = true))
+    fun keepsTheTurkishGenre() {
+        assertTrue(MovieRanking.isCandidate(movie(genres = listOf("کمدی", "ترکی")), FilterType.MOST_POPULAR))
     }
 }

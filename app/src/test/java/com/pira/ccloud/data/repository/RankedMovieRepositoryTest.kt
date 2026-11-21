@@ -60,7 +60,7 @@ class RankedMovieRepositoryTest {
     @Test
     fun movesOnWhenAYearHasOnlySkippedMovies() = runBlocking {
         val pages = listOf(
-            listOf(movie(1, 2026, "هندی"), movie(2, 2026, "ترکی")),
+            listOf(movie(1, 2026, "هندی"), movie(2, 2026, "هندی")),
             listOf(movie(3, 2025), movie(4, 2025))
         )
         val result = repository(pages).getRankedMovies(0, 0, FilterType.NEWEST, emptySet())
