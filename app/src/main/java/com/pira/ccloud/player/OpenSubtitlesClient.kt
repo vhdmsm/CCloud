@@ -26,7 +26,7 @@ object OpenSubtitlesClient {
     private const val BASE_URL = "https://api.opensubtitles.com/api/v1"
     private const val HASH_CHUNK_SIZE = 64 * 1024
 
-    val isConfigured: Boolean get() = BuildConfig.OPENSUBTITLES_API_KEY.isNotEmpty()
+    val isConfigured: Boolean get() = com.pira.ccloud.utils.ApiKeys.openSubtitles.isNotEmpty()
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
@@ -221,7 +221,7 @@ object OpenSubtitlesClient {
 
     private fun request(url: String) = Request.Builder()
         .url(url)
-        .header("Api-Key", BuildConfig.OPENSUBTITLES_API_KEY)
+        .header("Api-Key", com.pira.ccloud.utils.ApiKeys.openSubtitles)
         .header("User-Agent", "CCloud v${BuildConfig.VERSION_NAME}")
         .header("Accept", "application/json")
 

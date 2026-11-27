@@ -223,6 +223,7 @@ class VideoPlayerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AppLanguage.init(this)
+        com.pira.ccloud.utils.ApiKeys.init(this)
         
         // Set fullscreen landscape mode
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE

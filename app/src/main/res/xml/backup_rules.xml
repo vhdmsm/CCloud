@@ -8,6 +8,8 @@
 <full-backup-content>
     <!-- The shared movie data settings hold the publisher's GitHub token: kept on the device only -->
     <exclude domain="sharedpref" path="metadata_snapshot.xml"/>
+    <!-- API keys saved by the owner's build: kept on the device only -->
+    <exclude domain="sharedpref" path="api_keys.xml"/>
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

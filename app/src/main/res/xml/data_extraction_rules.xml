@@ -7,6 +7,8 @@
     <cloud-backup>
         <!-- The shared movie data settings hold the publisher's GitHub token: kept on the device only -->
         <exclude domain="sharedpref" path="metadata_snapshot.xml"/>
+        <!-- API keys saved by the owner's build: kept on the device only -->
+        <exclude domain="sharedpref" path="api_keys.xml"/>
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
@@ -14,5 +16,7 @@
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="metadata_snapshot.xml"/>
+        <!-- API keys saved by the owner's build: kept on the device only -->
+        <exclude domain="sharedpref" path="api_keys.xml"/>
     </device-transfer>
 </data-extraction-rules>
