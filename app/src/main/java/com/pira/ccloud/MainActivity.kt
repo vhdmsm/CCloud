@@ -64,6 +64,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // English or Persian, as chosen in Settings (or the device's language)
         AppLanguage.init(this)
+        // API keys: this build's own, or those an earlier build with keys saved on the device
+        com.pira.ccloud.utils.ApiKeys.init(this)
         // On-device caches of OMDb and Watchmode answers, to save their limited requests
         OmdbClient.init(this)
         WatchmodeClient.init(this)

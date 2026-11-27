@@ -1,7 +1,6 @@
 package com.pira.ccloud.data.repository
 
 import android.content.Context
-import com.pira.ccloud.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -29,7 +28,7 @@ object OmdbClient {
 
     // Any number of keys (OMDB_API_KEY, OMDB_API_KEY2, ...), comma-separated by the build
     private val keys: List<String> by lazy {
-        BuildConfig.OMDB_API_KEYS.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        com.pira.ccloud.utils.ApiKeys.omdb.split(',').map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     val isConfigured: Boolean get() = keys.isNotEmpty()

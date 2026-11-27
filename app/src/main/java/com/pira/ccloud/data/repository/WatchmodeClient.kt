@@ -1,7 +1,6 @@
 package com.pira.ccloud.data.repository
 
 import android.content.Context
-import com.pira.ccloud.BuildConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -55,7 +54,7 @@ object WatchmodeClient {
     private const val POPULAR_SERIES_TTL_MS = 7L * 24 * 60 * 60 * 1000
 
     private val keys: List<String> by lazy {
-        BuildConfig.WATCHMODE_API_KEYS.split(',').map { it.trim() }.filter { it.isNotEmpty() }
+        com.pira.ccloud.utils.ApiKeys.watchmode.split(',').map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     // Monthly quota and credits used per key, from the last response's headers
