@@ -894,10 +894,14 @@ fun VideoPlayerScreen(
     // Listen to player events and handle cleanup
     val playerListener = remember(exoPlayer) {
         object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) {
+            // Mirror playWhenReady (the user's play/pause intent), not Player.isPlaying.
+            // isPlaying turns false whenever the player rebuffers; copying that into our
+            // state made the LaunchedEffect below set playWhenReady = false, so a short
+            // buffering stall left the video paused until OK was pressed.
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 // Only update isPlaying if we're not currently seeking
                 if (!isSeeking) {
-                    isPlaying = playing
+                    isPlaying = playWhenReady
                 }
             }
             
